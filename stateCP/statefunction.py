@@ -9,26 +9,6 @@ jobs_data = [  # ( processing_time，state).
 ]
 release_time = [0, 11, 16]
 
-
-def alwaysEqual(stateDict, start_var, end_var, interval, stateVal, model):
-    # implement a dict for each value
-    newStateValue = False
-    if stateVal not in stateDict:
-        stateDict[stateVal] = [[start_var, end_var, interval]]
-        newStateValue = True
-        # for this given value, make sure the interval does not collide with other intervals for other value
-        # basically it is no overlap?
-    for key, vars in stateDict.items():
-        if key != stateVal:
-            for var in vars:
-                # add no overlap interval with different values, cos they cannot overlap otherwise state constraint violtates
-                model.AddNoOverlap([interval, var[2]])
-        else:  # for same key, just append this pair
-            if newStateValue == False:
-                stateDict[key].append([start_var, end_var, interval])
-    # print(statedict)
-
-
 # lexico ordering, start time, end time
 def lexicoOrdering(elem):
     return (elem[0], elem[1])
@@ -40,29 +20,55 @@ def getValues(var, solver):
     x.append(solver.Value(var[1]))
     return x
 
+class StateFunction():
+    def __init__(self):
+        self.stateDict = {}
 
-def printState(statedict, solver):
-    for key, vars in statedict.items():
-        varValues = list(map(lambda p: getValues(p, solver), vars))
-        varValues.sort(key=lexicoOrdering)
 
-        valueIntervals = []
-        startValue = varValues[0][0]
-        endValue = varValues[0][1]
+    def alwaysEqual(self, start_var, end_var, interval, stateVal, model):
+        # implement a dict for each value
+        newStateValue = False
+        if stateVal not in self.stateDict:
+            self.stateDict[stateVal] = [[start_var, end_var, interval]]
+            newStateValue = True
+            # for this given value, make sure the interval does not collide with other intervals for other value
+            # basically it is no overlap?
+        for key, vars in self.stateDict.items():
+            if key != stateVal:
+                for var in vars:
+                    # add no overlap interval with different values, cos they cannot overlap otherwise state constraint violtates
+                    model.AddNoOverlap([interval, var[2]])
+            else:  # for same key, just append this pair
+                if newStateValue == False:
+                    self.stateDict[key].append([start_var, end_var, interval])
+    # print(statedict)
 
-        valueIntervals.append([startValue, endValue])
-        idx = 1
-        while idx < len(varValues):
-            # continues
-            if varValues[idx][0] == startValue or varValues[idx][0] < endValue:
-                endValue = varValues[idx][1]
-                valueIntervals[-1] = [startValue, endValue]
-            else:  # a discrete start value
-                startValue = varValues[idx][0]
-                endValue = varValues[idx][1]
-                valueIntervals.append([startValue, endValue])
-            idx += 1
-        print('state = ', key, valueIntervals)
+    def printState(self, solver):
+        for key, vars in self.stateDict.items():
+            varValues = list(map(lambda p: getValues(p, solver), vars))
+            varValues.sort(key=lexicoOrdering)
+
+            valueIntervals = []
+            startValue = varValues[0][0]
+            endValue = varValues[0][1]
+
+            valueIntervals.append([startValue, endValue])
+            idx = 1
+            while idx < len(varValues):
+                # continues
+                if varValues[idx][0] == startValue or varValues[idx][0] < endValue:
+                    endValue = varValues[idx][1]
+                    valueIntervals[-1] = [startValue, endValue]
+                else:  # a discrete start value
+                    startValue = varValues[idx][0]
+                    endValue = varValues[idx][1]
+                    valueIntervals.append([startValue, endValue])
+                idx += 1
+            print('state = ', key, valueIntervals)
+
+
+
+
 
         # start = solver.Value(var[0])
         # end = solver.Value(var[1])
@@ -70,7 +76,7 @@ def printState(statedict, solver):
 
 
 def stateCPModel():
-    statedict = {}
+    state = StateFunction()
     model = cp_model.CpModel()
     jobs = len(jobs_data)
     alljobs = range(jobs)
@@ -96,7 +102,7 @@ def stateCPModel():
         ends.append(end_var)
         starts.append(start_var)
 
-        alwaysEqual(statedict, start_var, end_var, interval_var, jobs_data[j][1], model)
+        state.alwaysEqual(start_var, end_var, interval_var, jobs_data[j][1], model)
     # for i in alljobs:
     #    overlapIntervals[i] = []
     #    for j in alljobs:
@@ -135,7 +141,7 @@ def stateCPModel():
         for job_id, job in enumerate(jobs_data):
             print('job id', job_id, solver.Value(starts[job_id]), solver.Value(ends[job_id]))
 
-        printState(statedict, solver)
+        state.printState(solver)
 
 
 stateCPModel()
