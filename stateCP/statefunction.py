@@ -1,34 +1,38 @@
 # in Cplex constraint programming, there is a state function which can specify the state over intervals. We implement alwaysEqual version in python or-tools here
 # writer: oddo zhang
 from ortools.sat.python import cp_model
-jobs_data = [  #  ( processing_time，state).
+
+jobs_data = [  # ( processing_time，state).
     (10, 1),
     (4, 2),
     (14, 2)
 ]
-relase_time = [0,11,6]
+release_time = [0, 11, 16]
 
-def alwaysEqual(statedict, start_var, end_var, interval, stateval, model):
+
+def alwaysEqual(stateDict, start_var, end_var, interval, stateVal, model):
     # implement a dict for each value
     newStateValue = False
-    if stateval not in statedict:
-        statedict[stateval] = [[start_var, end_var, interval]]
+    if stateVal not in stateDict:
+        stateDict[stateVal] = [[start_var, end_var, interval]]
         newStateValue = True
         # for this given value, make sure the interval does not collide with other intervals for other value
         # basically it is no overlap?
-    for key, vars in statedict.items():
-        if key != stateval:
+    for key, vars in stateDict.items():
+        if key != stateVal:
             for var in vars:
                 # add no overlap interval with different values, cos they cannot overlap otherwise state constraint violtates
                 model.AddNoOverlap([interval, var[2]])
-        else: #for same key, just append this pair
+        else:  # for same key, just append this pair
             if newStateValue == False:
-                statedict[key].append([start_var,end_var,interval])
-    #print(statedict)
+                stateDict[key].append([start_var, end_var, interval])
+    # print(statedict)
+
 
 # lexico ordering, start time, end time
-def takeFirst(elem):
+def lexicoOrdering(elem):
     return (elem[0], elem[1])
+
 
 def getValues(var, solver):
     x = []
@@ -36,10 +40,11 @@ def getValues(var, solver):
     x.append(solver.Value(var[1]))
     return x
 
+
 def printState(statedict, solver):
     for key, vars in statedict.items():
         varValues = list(map(lambda p: getValues(p, solver), vars))
-        varValues.sort(key = takeFirst)
+        varValues.sort(key=lexicoOrdering)
 
         valueIntervals = []
         startValue = varValues[0][0]
@@ -52,17 +57,16 @@ def printState(statedict, solver):
             if varValues[idx][0] == startValue or varValues[idx][0] < endValue:
                 endValue = varValues[idx][1]
                 valueIntervals[-1] = [startValue, endValue]
-            else: # a discrete start value
+            else:  # a discrete start value
                 startValue = varValues[idx][0]
                 endValue = varValues[idx][1]
                 valueIntervals.append([startValue, endValue])
-            idx+=1
+            idx += 1
         print('state = ', key, valueIntervals)
 
-
-            #start = solver.Value(var[0])
-            #end = solver.Value(var[1])
-            #print('state = ', key, 'start = ', start,' end= ', end)
+        # start = solver.Value(var[0])
+        # end = solver.Value(var[1])
+        # print('state = ', key, 'start = ', start,' end= ', end)
 
 
 def stateCPModel():
@@ -85,24 +89,24 @@ def stateCPModel():
     for j in alljobs:
         duration = jobs_data[j][0]
         suffix = '_%i' % (j)
-        start_var = model.NewIntVar(relase_time[j], 77, 'start' + suffix)
-        end_var = model.NewIntVar(relase_time[j] + duration, 77, 'end' + suffix)
+        start_var = model.NewIntVar(release_time[j], 77, 'start' + suffix)
+        end_var = model.NewIntVar(release_time[j] + duration, 77, 'end' + suffix)
         interval_var = model.NewIntervalVar(start_var, duration, end_var, 'interval' + suffix)
         jobintervals.append(interval_var)
         ends.append(end_var)
         starts.append(start_var)
 
         alwaysEqual(statedict, start_var, end_var, interval_var, jobs_data[j][1], model)
-    #for i in alljobs:
+    # for i in alljobs:
     #    overlapIntervals[i] = []
     #    for j in alljobs:
     #        if i > j: continue
     #        if j in overlaps[i]:
     #            overlapIntervals[i].append(jobintervals[j])
     #    overlapIntervals[i].append(jobintervals[i])
-    #print(overlapIntervals)
+    # print(overlapIntervals)
     # no overlap
-    #for i in alljobs:
+    # for i in alljobs:
     #    print(overlaps[i])
     #    if overlaps[i] == None: continue
     #    for j in overlaps[i]:
