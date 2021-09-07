@@ -9,7 +9,7 @@ jobs_data = [  #  ( processing_time，state).
 relase_time = [0,11,6]
 
 def alwaysEqual(statedict, start_var, end_var, interval, stateval, model):
-    # implement a dic for each value
+    # implement a dict for each value
     newStateValue = False
     if stateval not in statedict:
         statedict[stateval] = [[start_var, end_var, interval]]
