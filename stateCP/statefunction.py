@@ -1,4 +1,4 @@
-# in Cplex constraint programming, there is a stateCP which can specify the state over intervals. We implement alwaysEqual version in python or-tools here
+# in Cplex constraint programming, there is a state function which can specify the state over intervals. We implement alwaysEqual version in python or-tools here
 # writer: oddo zhang
 from ortools.sat.python import cp_model
 jobs_data = [  #  ( processing_time，state).
