@@ -7,26 +7,28 @@ jobs_data = [  # ( processing_time).
     1
 ]
 
-transitionMatrix = [[0,1,3], [2,0,5], [1,5,0]]
+transitionMatrix = [[0, 1, 3], [2, 0, 5], [1, 5, 0]]
 release_time = [0, 10, 16]
+
 
 class ModelTransition(cp_model.CpModel):
     def AddNoOVerlapTransition(self, intervalList):
         for idx in range(len(intervalList)):
-            for idx1 in range(idx+1, len(intervalList)):
+            for idx1 in range(idx + 1, len(intervalList)):
                 suffix = '_%i_%i' % (intervalList[idx].index, intervalList[idx1].index)
                 # if first interval finish before second interval, end time of first must be smaller than the second
                 finishedBefore = self.NewBoolVar(suffix)
-                self.Add(intervalList[idx1].start > intervalList[idx].end + transitionMatrix[idx][idx1]).OnlyEnforceIf(finishedBefore)
+                self.Add(intervalList[idx1].start > intervalList[idx].end + transitionMatrix[idx][idx1]).OnlyEnforceIf(
+                    finishedBefore)
                 # the other way around
-                self.Add(intervalList[idx].start > intervalList[idx1].end + transitionMatrix[idx1][idx]).OnlyEnforceIf(finishedBefore.Not())
+                self.Add(intervalList[idx].start > intervalList[idx1].end + transitionMatrix[idx1][idx]).OnlyEnforceIf(
+                    finishedBefore.Not())
 
 
 interval_data = collections.namedtuple('interval_data', 'start end interval index')
 
+
 def createModel():
-
-
     jobs = len(jobs_data)
     alljobs = range(jobs)
     jobintervals = []
@@ -43,7 +45,7 @@ def createModel():
         start_var = model.NewIntVar(release_time[j], horizon, 'start' + suffix)
         end_var = model.NewIntVar(release_time[j] + duration, horizon, 'end' + suffix)
         interval_var = model.NewIntervalVar(start_var, duration, end_var, 'interval' + suffix)
-        #jobintervals.append((interval_var, j))
+        # jobintervals.append((interval_var, j))
         jobintervals.append(interval_data(start=start_var,
                                           end=end_var,
                                           interval=interval_var,
@@ -68,6 +70,3 @@ def createModel():
 
 
 createModel()
-
-
-
