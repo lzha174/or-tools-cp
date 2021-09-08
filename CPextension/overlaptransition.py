@@ -1,6 +1,7 @@
 from ortools.sat.python import cp_model
 import collections
-
+# In this script, we implement AddNoOverlap with minimum transition time between two intervals. This is missing in OR-TOOLS CP-SAT package
+# writer:oddo zhang
 jobs_data = [  # ( processing_time).
     10,
     4,
