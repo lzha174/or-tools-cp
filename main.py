@@ -4,7 +4,7 @@
 # Press Double ⇧ to search everywhere for classes, files, tool windows, actions, and settings.
 import sys
 
-sys.path.insert(0, './stateCP')
+sys.path.insert(0, 'CPextension')
 from statefunction import *
 
 stateCPModel()
