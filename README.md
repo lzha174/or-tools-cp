@@ -1,5 +1,5 @@
 # or-tools-cp
-in statefunction.py subfolder, we implement alwaysEqual for a state variable over intervals. Refer to Cplex constraint programming for details of the meaning.
+in statefunction.py, we implement alwaysEqual for a state variable over intervals. Refer to Cplex constraint programming for details of the meaning.
 Output will be like:
 
 job id 0 0 10
