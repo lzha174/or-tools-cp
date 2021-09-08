@@ -18,6 +18,7 @@ class ModelTransition(cp_model.CpModel):
             for idx1 in range(idx + 1, len(intervalList)):
                 suffix = '_%i_%i' % (intervalList[idx].index, intervalList[idx1].index)
                 # if first interval finish before second interval, end time of first must be smaller than the second
+                # use a bool to make this implication constraint
                 finishedBefore = self.NewBoolVar(suffix)
                 self.Add(intervalList[idx1].start > intervalList[idx].end + transitionMatrix[idx][idx1]).OnlyEnforceIf(
                     finishedBefore)
