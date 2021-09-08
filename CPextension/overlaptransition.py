@@ -66,7 +66,6 @@ def createModel():
     solver = cp_model.CpSolver()
     status = solver.Solve(model)
     if status == cp_model.OPTIMAL:
-        # Create one list of assigned tasks per machine.
         for job_id, job in enumerate(jobs_data):
             print('job id', job_id, solver.Value(jobintervals[job_id].start), solver.Value(jobintervals[job_id].end))
 
