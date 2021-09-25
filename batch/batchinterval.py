@@ -4,6 +4,8 @@
 
 from ortools.sat.python import cp_model
 import collections
+import pandas as pd
+import matplotlib.pyplot as plt
 
 jobs_data = [  # ( processing_time on a machine).
     5,
@@ -14,7 +16,7 @@ jobs_data = [  # ( processing_time on a machine).
 ]
 
 # cannto start machine 2 if there is only one item finished..at least two items finsihed
-interval_data = collections.namedtuple('interval_data', 'start end interval')
+interval_data = collections.namedtuple('interval_data', 'start end')
 
 def create_model():
     model = cp_model.CpModel()
@@ -32,7 +34,7 @@ def create_model():
             start_var = model.NewIntVar(0, 77, 'start' + suffix)
             end_var = model.NewIntVar(0, 77,'end' + suffix)
             jobVar = model.NewIntervalVar(start_var,jobs_data[j],end_var,name = 'job' + suffix)
-            jobsVars[j] = interval_data(start=start_var, end=end_var,interval=jobVar)
+            jobsVars[j] = interval_data(start=start_var, end=end_var)
             machineJobs.append(jobVar)
 
     for i in alljobs:
@@ -64,10 +66,38 @@ def create_model():
     solver = cp_model.CpSolver()
     status = solver.Solve(model)
     print(status)
+    df = pd.DataFrame()
     if status == cp_model.OPTIMAL:
+        starts = [solver.Value(jobsVars[j].start) for j in alljobs]
+        ends = [solver.Value(jobsVars[j].end) for j in alljobs]
+        datas = []
+        for j in alljobs:
+            data = [str(j),str(starts[j]),str(ends[j])]
+            datas.append(data)
+        df = pd.DataFrame(datas, columns=['Task','Start','Finish'])
         for job_id in alljobs:
             print('job id', job_id, solver.Value(jobsVars[job_id].start), solver.Value(jobsVars[job_id].end))
+
         print('min span', solver.ObjectiveValue())
+        print(df.head)
+
+
+    fig, ax = plt.subplots()
+    startY = 10
+    for j in alljobs:
+
+        ax.broken_barh([(starts[j], jobs_data[j])], (startY, 9), facecolors='blue')
+        startY += 10
+
+    ax.set_ylim(5, 35)
+    ax.set_xlim(0, 20)
+    ax.set_xlabel('seconds since start')
+    ax.set_yticks([15 + 10*j for j in alljobs])
+    ax.set_yticklabels(['job '+str(j) for j in alljobs])
+    ax.grid(True)
+
+    plt.show()
+
 
 
 create_model()
