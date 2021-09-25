@@ -10,7 +10,7 @@ import matplotlib.pyplot as plt
 jobs_data = [  # ( processing_time on a machine).
     5,
     3,
-    1,
+    4,
     4,
     12
 ]
@@ -84,12 +84,13 @@ def create_model():
 
     fig, ax = plt.subplots()
     startY = 10
+    colors = ['blue','red','yellow','green','orange']
     for j in alljobs:
 
-        ax.broken_barh([(starts[j], jobs_data[j])], (startY, 9), facecolors='blue')
+        ax.broken_barh([(starts[j], jobs_data[j])], (startY, 9), facecolors=colors[j])
         startY += 10
 
-    ax.set_ylim(5, 35)
+    ax.set_ylim(5, 65)
     ax.set_xlim(0, 20)
     ax.set_xlabel('seconds since start')
     ax.set_yticks([15 + 10*j for j in alljobs])
