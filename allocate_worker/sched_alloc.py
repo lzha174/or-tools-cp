@@ -1,8 +1,14 @@
+# this file models workers belonging to seperate work groups
+# each group can perform some of the tasks
+# each group, workers has a max unused number
+# a task must be done by one of the allowed group
+# we need to decid worker interval so that they can cover all jobs for the associated group
+# this is acheived by cumulative functions difference bewteen avaliable resoruces and used resources
+
 import collections
 
 # Import Python wrapper for or-tools CP-SAT solver.
 from ortools.sat.python import cp_model
-#need to write a customised cumulative function for my applciaiotn
 
 
 class ModelComulative(cp_model.CpModel):
