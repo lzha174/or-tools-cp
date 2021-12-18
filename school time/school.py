@@ -45,6 +45,8 @@ def create_model():
     ( "Z", "Maths", 1, 2 ),
     ( "Z", "Physics", 1, 1 )]
 
+    #RequirementSet = [("X", "French", 1, 1), ( "Y", "French", 1, 1 )]
+
     DedicatedRoomSet = [("Stadium", "Sport" ),
     ("Lab", "Biology" )
     ]
@@ -216,11 +218,22 @@ def create_model():
             model.Add(Teachers[r] == 2)
     #  // ensure that a room is required once at any time point.
     includesFLagsRoomDict = {}
-    for r in InstanceSet:
+    for idx, r in enumerate(InstanceSet):
+
         for x in Room:
             if PossibleRoom[r.discipline, x] == 1:
-                includesRoom = [model.NewBoolVar(' ' )] * len(InstanceSet)
-                #print(len(includesRoom), includesRoom)
+                includesRoom = []
+                for idx1, o in enumerate(InstanceSet):
+                    suffix = 'r%i x%s o%i' % (idx, x, idx1)
+                    includesRoom.append(model.NewIntVar(0, 1, suffix))
+
+                #includesRoom = [model.NewIntVar(0 ,1, 'room for %i at r %s ins %i ' ]
+                includesFLagsRoomDict[idx, x] = includesRoom
+
+                #model.Add(includesFLagsRoomDict[idx,x][0] == 1)
+                #model.Add(includesFLagsRoomDict[idx,x][1] == 0)
+
+                #model.Add(includesRoom[0] + includesRoom[1] == 1)
                 for o in InstanceSet:
                     index = InstanceSet.index(o)
                     if PossibleRoom[o.discipline, x] == 0:
@@ -230,29 +243,29 @@ def create_model():
                     model.Add(Starts[o] >= Starts[r]).OnlyEnforceIf(includesRoom[index])
                     model.Add(Starts[o] < Ends[r]).OnlyEnforceIf(includesRoom[index])
 
-
                     startAfterR = model.NewIntVar(0, 1, 'start_% i after %i' % (index, InstanceSet.index(r)))
-
 
                     model.Add(Starts[o] >= Starts[r]).OnlyEnforceIf(startAfterR)
                     model.Add(Starts[o] < Starts[r]).OnlyEnforceIf(startAfterR.Not())
 
-                    startBeforeEndR = model.NewIntVar(0,1, 'start %i before end %i' % (index, InstanceSet.index(r)))
+                    startBeforeEndR = model.NewIntVar(0, 1, 'start %i before end %i' % (index, InstanceSet.index(r)))
 
                     model.Add(Starts[o] < Ends[r]).OnlyEnforceIf(startBeforeEndR)
                     model.Add(Starts[o] >= Ends[r]).OnlyEnforceIf(startBeforeEndR.Not())
 
-                    sameRoom = model.NewBoolVar( 'same room %i for r' % (index))
-                    #model.Add(Rooms[o] == Room.index(x)).OnlyEnforceIf(sameRoom)
-                    #model.Add(Rooms[o] != Room.index(x)).OnlyEnforceIf(sameRoom.Not())
+                    sameRoom = model.NewBoolVar('same room %i for r' % (index))
+                    model.Add(Rooms[o] == Room.index(x)).OnlyEnforceIf(sameRoom)
+                    model.Add(Rooms[o] != Room.index(x)).OnlyEnforceIf(sameRoom.Not())
 
                     # if all three bools are true, include this o in the sum
-                    #model.Add(startAfterR + startBeforeEndR  == 2).OnlyEnforceIf(includesRoom[index])
+                    model.Add(startAfterR + startBeforeEndR + sameRoom  == 3).OnlyEnforceIf(includesRoom[index])
 
-                    model.Add(startAfterR + startBeforeEndR < 5).OnlyEnforceIf(includesRoom[index].Not())
-                includesFLagsRoomDict[r, x] = includesRoom
-                #model.Add(sum(includesFLagsRoomDict[r, x][i] for i, v  in enumerate(InstanceSet)) < 12)
+                    model.Add(startAfterR + startBeforeEndR + sameRoom < 3).OnlyEnforceIf(includesRoom[index].Not())
 
+                model.Add(sum(includesFLagsRoomDict[idx, x][i] for i, v  in enumerate(InstanceSet)) < 2)
+
+    for key, item in includesFLagsRoomDict.items():
+        print(key, item)
     # // ensure the room can support the discipline
     for r in InstanceSet:
         print([r.discipline], [list(PossibleRoomIds[r.discipline])])
@@ -270,20 +283,18 @@ def create_model():
     model.Minimize(makespan)
     solver = cp_model.CpSolver()
     #solver.parameters.max_time_in_seconds = 20
-    print('solve', cp_model.FEASIBLE)
+    print('solve', cp_model.INFEASIBLE)
     status = solver.Solve(model)
     print(status,  'Optimal = ', cp_model.OPTIMAL)
     if status == 4:
         for i in InstanceSet:
-            print(i.cls, i.discipline,  solver.Value(Teachers[i]))
+            print(i.discipline,  i.Duration, 'start = ', solver.Value(Starts[i]), 'end = ', solver.Value(Ends[i]))
         for i in InstanceSet:
-            print(i.cls, i.discipline,  [solver.Value(Rooms[i])])
+            print(i.cls, i.discipline,  Room[solver.Value(Rooms[i])])
         print(solver.ObjectiveValue())
-
-        for r in InstanceSet:
-            for x in Room:
-                if PossibleRoom[r.discipline, x] == 1:
-                    for o in InstanceSet:
-                        if solver.Value(includesFLagsRoomDict[r,x][InstanceSet.index(o)]) == 1:
-                            print(r.cls, r.discipline, r.id, solver.Value(includesFLagsRoomDict[r,x][InstanceSet.index(o)]))
+        for key in includesFLagsRoomDict:
+            print(includesFLagsRoomDict[key])
+            for item in includesFLagsRoomDict[key]:
+                print('item=',solver.Value(item))
+                #print(solver.Value(item))
 create_model()
