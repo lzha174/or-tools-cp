@@ -198,6 +198,43 @@ def create_model():
             if i.id < j.id and i.requirementId == j.requirementId:
                 model.Add(Starts[i] < Starts[j])
 
+    #// ensure that a teacher is required once at any time point
+    includesFLagsDict = {}
+    for idx, r in enumerate(InstanceSet):
+        for x in Teacher:
+            if r.discipline in PossibleTeacherDiscipline[x]:
+
+                includeFLags = []
+                for idx1, o in enumerate(InstanceSet):
+                    suffix = 't-r%i x%s o%i' % (idx, x, idx1)
+                    includeFLags.append(model.NewIntVar(0, 1, suffix))
+
+                includesFLagsDict[idx, x] = includeFLags
+                for o in InstanceSet:
+                    index = InstanceSet.index(o)
+                    # O's displimne is not in the possible displine of teacher x, dont include this instance
+                    if o.discipline not in PossibleTeacherDiscipline[x]:
+                        model.Add(includeFLags[index] == False)
+                        continue
+
+                    startAfterR = model.NewBoolVar( 'start_% i after r' % (index))
+
+                    model.Add(Starts[o] >= Starts[r]).OnlyEnforceIf(startAfterR)
+                    model.Add(Starts[o] < Starts[r]).OnlyEnforceIf(startAfterR.Not())
+
+                    startBeforeEndR = model.NewBoolVar('start %i before end r' % (index))
+
+                    model.Add(Starts[o] < Ends[r]).OnlyEnforceIf(startBeforeEndR)
+                    model.Add(Starts[o] >= Ends[r]).OnlyEnforceIf(startBeforeEndR.Not())
+
+                    teacherX = model.NewBoolVar( 'same teacher %i for r' % (index))
+                    model.Add(Teachers[o] == Teacher.index(x)).OnlyEnforceIf(teacherX)
+                    model.Add(Teachers[o] != Teacher.index(x)).OnlyEnforceIf(teacherX.Not())
+
+                    # if all three bools are true, include this o in the sum
+                    model.Add(startAfterR + startBeforeEndR + teacherX == 3).OnlyEnforceIf(includeFLags[index])
+                    model.Add(startAfterR + startBeforeEndR + teacherX < 3).OnlyEnforceIf(includeFLags[index].Not())
+                model.Add(sum(includesFLagsDict[idx,x][InstanceSet.index(o)] for o in InstanceSet) < 2)
     # // ensure the teacher can teach the discipline
     for r in InstanceSet:
         v = []
@@ -226,14 +263,8 @@ def create_model():
                 for idx1, o in enumerate(InstanceSet):
                     suffix = 'r%i x%s o%i' % (idx, x, idx1)
                     includesRoom.append(model.NewIntVar(0, 1, suffix))
-
-                #includesRoom = [model.NewIntVar(0 ,1, 'room for %i at r %s ins %i ' ]
                 includesFLagsRoomDict[idx, x] = includesRoom
 
-                #model.Add(includesFLagsRoomDict[idx,x][0] == 1)
-                #model.Add(includesFLagsRoomDict[idx,x][1] == 0)
-
-                #model.Add(includesRoom[0] + includesRoom[1] == 1)
                 for o in InstanceSet:
                     index = InstanceSet.index(o)
                     if PossibleRoom[o.discipline, x] == 0:
@@ -272,13 +303,46 @@ def create_model():
         model.Add(Rooms[r] <= 5)
         #model.AddAllowedAssignments([Rooms[r]],[(x,) for x in PossibleRoomIds[r.discipline]])
     #  // ensure that a class follows one course at a time
+    sameCLassInstanceFLagsDict = {}
+    for x in Class:
+        for idx, r in enumerate(InstanceSet):
+
+            if r.cls == x:
+                sameCLassInstanceFLags = [model.NewBoolVar('')] * len(InstanceSet)
+
+                sameCLassInstanceFLags = []
+                for idx1, o in enumerate(InstanceSet):
+                    suffix = 'c-r%i x%s o%i' % (idx, x, idx1)
+                    sameCLassInstanceFLags.append(model.NewIntVar(0, 1, suffix))
+                sameCLassInstanceFLagsDict[idx, x] = sameCLassInstanceFLags
+
+                for o in InstanceSet:
+                    index = InstanceSet.index(o)
+                    if o.cls != x:
+                        model.Add(sameCLassInstanceFLags[index] == False)
+                        continue
+                    classStartAfterR = model.NewBoolVar('start %i after r' % index)
+                    classStartBeforeEndR = model.NewBoolVar('start % i b4 end r' % index)
+
+                    model.Add(Starts[o] >= Starts[r]).OnlyEnforceIf(classStartAfterR)
+                    model.Add(Starts[o] <  Starts[r]).OnlyEnforceIf(classStartAfterR.Not())
+
+
+                    model.Add(Starts[o] < Ends[r]).OnlyEnforceIf(classStartBeforeEndR)
+                    model.Add(Starts[o] >= Ends[r]).OnlyEnforceIf(classStartBeforeEndR.Not())
+
+                    model.Add(classStartAfterR + classStartBeforeEndR == 2).OnlyEnforceIf(sameCLassInstanceFLags[index])
+                    model.Add(classStartAfterR + classStartBeforeEndR < 2).OnlyEnforceIf(sameCLassInstanceFLags[index].Not())
+
+                sameCLassInstanceFLagsDict[x, idx] = sameCLassInstanceFLags
+                #print(InstanceSet.index[o]for o in InstanceSet)
+                model.Add(sum(sameCLassInstanceFLagsDict[x,idx][InstanceSet.index(o)] for o in InstanceSet) < 2)
 
     # // ensure that for given class and discipline, the teacher is always the same
     for x in Class:
         for d in Discipline:
             for r in InstanceSet:
                 if r.cls == x and r.discipline == d:
-                    a = 1
                     model.Add(Teachers[r] == classTeacher[x, d])
     model.Minimize(makespan)
     solver = cp_model.CpSolver()
@@ -287,14 +351,17 @@ def create_model():
     status = solver.Solve(model)
     print(status,  'Optimal = ', cp_model.OPTIMAL)
     if status == 4:
+        roomsClasses = {}
+        for x in Room:
+            roomsClasses[x] = []
         for i in InstanceSet:
             print(i.discipline,  i.Duration, 'start = ', solver.Value(Starts[i]), 'end = ', solver.Value(Ends[i]))
         for i in InstanceSet:
             print(i.cls, i.discipline,  Room[solver.Value(Rooms[i])])
+            room = Room[solver.Value(Rooms[i])]
+            roomsClasses[room].append((solver.Value(Starts[i]), solver.Value(Ends[i])))
         print(solver.ObjectiveValue())
-        for key in includesFLagsRoomDict:
-            print(includesFLagsRoomDict[key])
-            for item in includesFLagsRoomDict[key]:
-                print('item=',solver.Value(item))
+        for key, value in roomsClasses.items():
+            print(key, value)
                 #print(solver.Value(item))
 create_model()
