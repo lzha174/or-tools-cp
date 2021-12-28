@@ -1,6 +1,7 @@
 import collections
 
 # Import Python wrapper for or-tools CP-SAT solver.
+# this is coding the square example from cplex studio
 from ortools.sat.python import cp_model
 
 from CPextension import cumulative
