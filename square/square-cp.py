@@ -5,7 +5,8 @@ import collections
 from ortools.sat.python import cp_model
 
 from CPextension import cumulative
-
+from drawing import gannt
+    
 def create_model():
     model = cumulative.ModelComulative()
 
@@ -69,8 +70,13 @@ def create_model():
     status = solver.Solve(model)
     print(status,  'Optimal = ', cp_model.OPTIMAL)
     print('X')
+    # get all x start,size tuple
+    x_start = []
     for key, item in X.items():
+        x_start.append((solver.Value(item.start), Size[key]))
         print(solver.Value(item.start), solver.Value(item.end))
+    gannt.draw_gannt(x_start)
+    
     print('Y')
     for key, item in Y.items():
         print(solver.Value(item.start), solver.Value(item.end))
