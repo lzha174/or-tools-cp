@@ -1,8 +1,13 @@
 import matplotlib.pyplot as plt
 from random import randint
+import numpy as np
 import random
 
-
+def draw_step(x = [], y = []):
+    plt.title('plt.step(where=...)')
+    plt.step(x, y, label='pre (default)')
+    plt.show()
+    
 def draw_gannt(x_pairs):
     no_of_colors = len(x_pairs)
     colors = ["#" + ''.join([random.choice('0123456789ABCDEF') for i in range(6)])

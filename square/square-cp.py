@@ -5,7 +5,7 @@ import collections
 from ortools.sat.python import cp_model
 
 from CPextension import cumulative
-from drawing import gannt
+from drawing import draw
     
 def create_model():
     model = cumulative.ModelComulative()
@@ -75,8 +75,12 @@ def create_model():
     for key, item in X.items():
         x_start.append((solver.Value(item.start), Size[key]))
         print(solver.Value(item.start), solver.Value(item.end))
-    gannt.draw_gannt(x_start)
-    
+    draw.draw_gannt(x_start)
+
+    # get x, y and step function
+    x, y = model.get_step_x_y(solver, 'x_cumulative')
+    draw.draw_step(x, y)
+
     print('Y')
     for key, item in Y.items():
         print(solver.Value(item.start), solver.Value(item.end))

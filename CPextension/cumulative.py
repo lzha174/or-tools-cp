@@ -62,6 +62,14 @@ class ModelComulative(cp_model.CpModel):
             self.Add(self.comulatives[name][t] >= vmin)
             self.Add(self.comulatives[name][t] <= vmax)
 
+    def get_step_x_y(self, solver, name):
+        x = []
+        y = []
+        for idx, item in enumerate(self.comulatives[name]):
+            x.append(idx)
+            y.append(solver.Value(item))
+        return x,y
+
 
     def show_cum(self, solver):
         for key in self.comulatives:
