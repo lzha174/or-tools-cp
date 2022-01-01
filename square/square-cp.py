@@ -15,7 +15,6 @@ def create_model():
     model.setMaxValue(SizeSquare)
     Squares = range(NbSquares)
     Size = [50, 42, 37, 35, 33, 29, 27, 25, 24, 19, 18, 17, 16, 15, 11, 9, 8, 7, 6, 4, 2]
-
     task_type = collections.namedtuple('task', 'start end duration interval')
     X = {}
     Y = {}

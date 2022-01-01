@@ -4,7 +4,8 @@ from ortools.sat.python import cp_model
 # in this file, we implment sequence function
 # so we can constrint start, finish and extra features for a sequence
 # use a hamliton path to find ranks to determine the sequence
-def create_model():
+
+def no_optional():
     model = cp_model.CpModel()
     nbJobs = 20
     nbMchs = 5
@@ -34,6 +35,10 @@ def create_model():
     Mchs = range(nbMchs)
     intervals_per_machines = collections.defaultdict(list)
     intervals_per_jobs = collections.defaultdict(list)
+    presences_per_machines = collections.defaultdict(list)
+    ranks_per_machines = collections.defaultdict(list)
+    starts_per_machines = collections.defaultdict(list)
+    ends_per_machines = collections.defaultdict(list)
     ends_per_jobs =  []
     for j in Jobs:
         for m in Mchs:
@@ -45,7 +50,13 @@ def create_model():
             end_var = model.NewIntVar(0, 9999, 'end' + suffix)
             job_interval = model.NewIntervalVar(start_var, duration, end_var, suffix)
             intervals_per_machines[m].append(job_interval)
+            presences_per_machines[m].append(True)
             intervals_per_jobs[j].append((start_var, end_var))
+            starts_per_machines[m].append(start_var)
+            ends_per_machines[m].append(end_var)
+
+            l_rank = model.NewIntVar(-1, nbJobs, 'rank' + suffix)
+            ranks_per_machines[m].append(l_rank)
             if m == 4:
                 ends_per_jobs.append(end_var)
     # each job no overlap on each machine
@@ -57,16 +68,71 @@ def create_model():
         for i in range(len(intervals_per_jobs[j]) - 1) :
             #print(intervals_per_jobs[j][i + 1][0], intervals_per_jobs[j][i][1])
             model.Add(intervals_per_jobs[j][i + 1][0] > intervals_per_jobs[j][i][1])
+    # find ranking on each machine
+    for m in Mchs:
+        machine_ranks = ranks_per_machines[m]
+        machine_starts = starts_per_machines[m]
+        machine_ends = ends_per_machines[m]
+        num_machine_tasks = len(machine_starts)
+        all_machine_tasks = range(num_machine_tasks)
+        print('nb jobs', nbJobs)
+        arcs = []
+        # add a dumy node
+        starts = []
+        for i in all_machine_tasks:
+            start_lit = model.NewBoolVar('')
+            starts.append(start_lit)
+            arcs.append([0, i+1, start_lit])
+            # If this task is the first, set both rank and start to 0.
+            # the rank var for this task is zero if this task is the starting one
+            model.Add(machine_ranks[i] == 0).OnlyEnforceIf(start_lit)
+            # Final arc from an arc to the dummy node.
+            end_lit = model.NewBoolVar('')
+            arcs.append([i + 1, 0, end_lit])
+            for j in all_machine_tasks:
+                if i == j:
+                    continue
+
+                # add links between all optional tasks, both directions
+
+                lit = model.NewBoolVar('%i follows %i' % (j, i))
+                arcs.append([i + 1, j + 1, lit])
+                model.Add(machine_starts[j] > machine_ends[i]).OnlyEnforceIf(lit)
+                # Maintain rank incrementally.
+                # the ranking also follows
+                model.Add(machine_ranks[j] == machine_ranks[i] + 1).OnlyEnforceIf(lit)
+        if arcs:
+            print(arcs)
+                # A circuit is a unique Hamiltonian path in a subgraph of the total graph
+            model.AddCircuit(arcs)
+        #model.AddBoolXOr(starts)
+    # implement same sequence contarint, the mapped intervals on two sequences should have same order
 
     # Objective.
+    for m in range(0,nbMchs - 1):
+        for m1 in range(m+1, nbMchs):
+            rank_tasks = ranks_per_machines[m]
+            rank1_tasks = ranks_per_machines[m1]
+            num_machine_tasks = len(machine_starts)
+            all_machine_tasks = range(num_machine_tasks)
+            for t in all_machine_tasks:
+                model.Add(rank_tasks[t] == rank1_tasks[t])
+
     objective_var = model.NewIntVar(0, 9999, 'obj')
     model.AddMaxEquality(objective_var, ends_per_jobs)
     model.Minimize(objective_var)
     solver = cp_model.CpSolver()
-    solver.parameters.max_time_in_seconds = 20
+    solver.parameters.max_time_in_seconds = 1
     print('solve', cp_model.FEASIBLE)
     status = solver.Solve(model)
     print(status,  cp_model.FEASIBLE)
     if status == cp_model.OPTIMAL or  status == cp_model.FEASIBLE:
         print(solver.Value(objective_var))
-create_model()
+        for m in Mchs:
+            ranks = {}
+            for i in Jobs:
+                r = int(solver.Value(ranks_per_machines[m][i]))
+                ranks[r] = i
+                print(r'rank for job %i is %i on machine %i' % (i, solver.Value(ranks_per_machines[m][i]), m ))
+            od = collections.OrderedDict(sorted(ranks.items()))
+            print(od)
