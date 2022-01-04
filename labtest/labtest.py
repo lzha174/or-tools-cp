@@ -97,10 +97,11 @@ def lab_model():
                     # this job can start at both batch
                     l_lunch_batch = model.NewBoolVar('lunch '+ suffix)
                     l_evening_batch = model.NewBoolVar('evening '+ suffix)
+                    model.
     
     print(f'starts {start_job}')
     print(f'ends {end_job}')
-    print
+    print(f'durations { durations}')
 
 
 
