@@ -7,9 +7,12 @@ import drawing.draw
 from drawing import draw
 
 import pandas as pd
-
+from datetime import datetime
+from datetime import timedelta
 paras = {
     'job_data':[],
+    'category': [],
+    'ready_time': [],
     'process_category': [0,	0,	1,	0,	0,	1,	1,	1,	1,	1],# 0 means it can be at 12-2pm or 6pm-3am batch, 1 means it only be at 6pm-3pm batch, processing time is 2 hour or 9 hours
     'days': 3, # planning for 3 days
     'start':8, # start time for stage 0, 1, 3 every day, 8am
@@ -18,13 +21,33 @@ paras = {
     'duration_2': [2 *60 , 9 * 60] # duration for category 0 and 1 at stage 2 in minutes
 }
 
+
+def test(n = 15):
+    # Given timestamp in string
+    time_str = '01/01/2022 00:00:00'
+    date_format_str = '%m/%d/%Y %H:%M:%S'
+    # create datetime object from timestamp string
+    given_time = datetime.strptime(time_str, date_format_str)
+    #print('Given timestamp: ', given_time)
+    # Add 15 minutes to datetime object
+    final_time = given_time + timedelta(minutes=n)
+    #print('Final Time (15 minutes after given time ): ', final_time)
+    # Convert datetime object to string in specific format
+    final_time_str = final_time.strftime('%m/%d/%Y %H:%M:%S.%f')
+    #print('Final Time as string object: ', final_time_str)
+    return  final_time_str
+
+
 def process_data(row):
     data = [row['stage_0'], row['stage_1'], row['stage_2'], row['stage_3']] # processing time in minutes at every stage escept stage 2, fixed time
     paras['job_data'].append(data)
+    paras['category'].append(row['category'])
+    paras['ready_time'].append(row['ready_time_mins']) # base time is 2022/01/01 12:00 am
+
 
 def read_data():
 
-    df = pd.read_csv ('Lab Request Example Data - Sheet3.csv')
+    df = pd.read_csv ('10-jobs.csv')
     #df = df.drop(columns = ['stage_2'])
     print(df.head)
     df.apply(process_data, axis = 1)
@@ -53,7 +76,7 @@ def lab_model():
     OpsDuration = paras['job_data']
     maxDuration = 550
 
-    category = paras['process_category']
+    category = paras['category']
     two_hour_idx = 0
     six_hour_idx = 1
 
@@ -81,6 +104,7 @@ def lab_model():
     durations = {}
     jobs = {} # intervals index by job_id, task id
     stage_tasks = {} # indexed by stage id
+    first_start = []
     last_end = []
     for j in paras['allJobs']:
         start_job[j] = []
@@ -91,11 +115,18 @@ def lab_model():
 
         for stage in paras['allTasks']:
             suffix = f'job {j} task {stage}'
+
             start = model.NewIntVar(0, horizon, 'start ' + suffix)
 
             duration = model.NewIntVar(0, maxDuration, 'duration' + suffix)
 
             end = model.NewIntVar(0, horizon, 'end ' + suffix)
+
+            # first task start time >= ready time
+            if stage == 0:
+                model.Add(start >= paras['ready_time'][j])
+                first_start.append(start)
+
             if stage == 3:
                 last_end.append(end)
 
@@ -181,7 +212,7 @@ def lab_model():
     # add capacity constraint for stage 0
     # here the machine capacity 1 means for each machine, it can only perform one job at the same time
     # for stage 2, we have 1000 machines
-    capacity = [10, 20, 1000, 2]
+    capacity = [1, 2, 1000, 2]
     for stage in paras['allTasks']:
         # capacity is 1, means no tasks at the same stage can overlap
         # capacity is 2, means two tasks can overlap, as we have two machines
@@ -196,12 +227,24 @@ def lab_model():
     print(f'stage tasks {stage_tasks}')
 
     # Makespan objective.
-    obj_var = model.NewIntVar(0, horizon, 'makespan')
-    model.AddMaxEquality(obj_var, last_end)
+    #obj_var = model.NewIntVar(0, horizon, 'makespan')
+    #model.AddMaxEquality(obj_var, last_end)
+    #model.Minimize(obj_var)
+    # try minimise total in system time
 
-    #model.Minimize(sum(ends[i] - starts[i] for i in allJobs))
-    model.Minimize(obj_var)
+    #model.Minimize(sum(last_end[i] - first_start[i] for i in paras['allJobs']))
 
+    # try minimise max in system time
+    in_systems = []
+    for j in paras['allJobs']:
+        suffix = 'in_system_{j}'
+        in_system_var = model.NewIntVar(0, horizon, suffix)
+        model.Add(in_system_var == last_end[j] - first_start[j])
+        in_systems.append(in_system_var)
+
+    in_system_obj = model.NewIntVar(0, horizon, 'in_system')
+    model.AddMaxEquality(in_system_obj, in_systems)
+    model.Minimize(in_system_obj)
     # Solve.
     solver = cp_model.CpSolver()
     solver.parameters.max_time_in_seconds = 60 * 60 * 2
@@ -210,10 +253,37 @@ def lab_model():
     # Print solution.
     if status == cp_model.FEASIBLE or status == cp_model.OPTIMAL:
         print(status)
+        case_durations = []
+        formatted_start_time = {} # indexed by job id and task id
+        formatted_end_time = {}
+
         for j in paras['allJobs']:
             for t in paras['allTasks']:
                 print(f'{j} {t}')
                 print('start {}, duration {}, end {}'.format(solver.Value(start_job[j][t]), solver.Value(durations[j][t]), solver.Value(end_job[j][t])))
+                start_time = test(solver.Value(start_job[j][t]))
+                end_time = test(solver.Value(end_job[j][t]))
+
+                formatted_start_time[j, t] = start_time
+                formatted_end_time[j,t] = end_time
+
+            job_duration = (solver.Value(last_end[j]) - solver.Value(first_start[j]))/1440
+
+            case_durations.append(job_duration)
+        print('max in_system duration =',solver.ObjectiveValue()/1440)
+
+        for j in paras['allJobs']:
+            print(f'{case_durations[j]}')
+
+        print('formmated starting time')
+        for j in paras['allJobs']:
+            for t in paras['allTasks']:
+                print(formatted_start_time[j,t])
+
+        print('formmated ending time')
+        for j in paras['allJobs']:
+            for t in paras['allTasks']:
+                print(formatted_end_time[j,t])
 # step 1 see if cumulative works for optional job
 def create_model():
     jobs = [10, 20, 10] # duration
@@ -314,7 +384,9 @@ def create_model():
                     print('perform job {}  on machine {}'.format(job_id, mid))
                     print(solver.Value(starts_machines[job_id, mid]), solver.Value(ends_machines[job_id, mid]))
 
+
         draw.draw_gannt(x_pairs)
 
 read_data()
 lab_model()
+test()
