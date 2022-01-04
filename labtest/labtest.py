@@ -10,7 +10,7 @@ import pandas as pd
 
 paras = {
     'job_data':[],
-    'process_category': [0,	1,	1,	0,	0,	1,	1,	1,	1,	1],# 0 means it can be at 12-2pm or 6pm-3am batch, 1 means it only be at 6pm-3pm batch, processing time is 2 hour or 9 hours
+    'process_category': [0,	0,	1,	0,	0,	1,	1,	1,	1,	1],# 0 means it can be at 12-2pm or 6pm-3am batch, 1 means it only be at 6pm-3pm batch, processing time is 2 hour or 9 hours
     'days': 3, # planning for 3 days
     'start':8, # start time for stage 0, 1, 3 every day, 8am
     'end': 18, # end time for stage 0,1,3 every day 6pm
@@ -19,12 +19,12 @@ paras = {
 }
 
 def process_data(row):
-    data = [row['stage_0'], row['stage_1'], row['stage_3']] # processing time in minutes at every stage escept stage 2, fixed time
+    data = [row['stage_0'], row['stage_1'], row['stage_2'], row['stage_3']] # processing time in minutes at every stage escept stage 2, fixed time
     paras['job_data'].append(data)
 
 def read_data():
 
-    df = pd.read_csv ('job_data.csv')
+    df = pd.read_csv ('Lab Request Example Data - Sheet3.csv')
     #df = df.drop(columns = ['stage_2'])
     print(df.head)
     df.apply(process_data, axis = 1)
@@ -51,7 +51,7 @@ def lab_model():
     # define starting time, ending time in mins for 3 days
 
     OpsDuration = paras['job_data']
-    maxDuration = 540
+    maxDuration = 550
 
     category = paras['process_category']
     two_hour_idx = 0
@@ -81,6 +81,7 @@ def lab_model():
     durations = {}
     jobs = {} # intervals index by job_id, task id
     stage_tasks = {} # indexed by stage id
+    last_end = []
     for j in paras['allJobs']:
         start_job[j] = []
         end_job[j] = []
@@ -95,6 +96,8 @@ def lab_model():
             duration = model.NewIntVar(0, maxDuration, 'duration' + suffix)
 
             end = model.NewIntVar(0, horizon, 'end ' + suffix)
+            if stage == 3:
+                last_end.append(end)
 
             # Add precedence with previous task in the same job.
             if previous_end is not None:
@@ -116,46 +119,50 @@ def lab_model():
                     # this job can start at both batch
                     l_lunch_batch = model.NewBoolVar('lunch '+ suffix)
                     # lunch batch take 2 hours
-                    model.Add(duration == paras['process_category'][two_hour_idx]).OnlyEnforceIf(l_lunch_batch)
+                    model.Add(duration == paras['duration_2'][two_hour_idx]).OnlyEnforceIf(l_lunch_batch)
                     # starting time is at noon
                     l_stage_2_lunch_start = []
                     for d in days:
                         # if this task start at day d, make sure it start at 12pm
-                        start_time_lunch = paras['start_2'][two_hour_idx] + d * 24 * 1440
+                        start_time_lunch = paras['start_2'][two_hour_idx] + d * 24 * 60
                         l_stage_2_lunch_task_start = model.NewBoolVar('stage 2 lunch in {} {}'.format(d, suffix))
-                        model.Add(start == start_time_lunch ).OnlyEnforceIf([l_stage_2_lunch_task_start, l_lunch_batch])
+                        #model.Add(start == start_time_lunch ).OnlyEnforceIf([l_stage_2_lunch_task_start, l_lunch_batch])
                         l_stage_2_lunch_start.append(l_stage_2_lunch_task_start)
                     # if we have this job at lunch, one of the mid day must be chosen
                     model.Add(sum(s for s in l_stage_2_lunch_start) == 1).OnlyEnforceIf(l_lunch_batch)
 
                     # starting time is evening
                     # evening batch take 6 hours
-                    model.Add(duration == paras['process_category'][six_hour_idx]).OnlyEnforceIf(l_lunch_batch.Not())
+                    model.Add(duration == paras['duration_2'][six_hour_idx]).OnlyEnforceIf(l_lunch_batch.Not())
                     l_stage_2_evening_start = []
                     for d in days:
+                        if d == paras['days'] - 1: continue
                         # if this task start at day d, make sure it start at 12pm
-                        start_time_evening = paras['start_2'][six_hour_idx] + d * 24 * 1440
+                        start_time_evening = paras['start_2'][six_hour_idx] + d * 24 * 60
                         l_stage_2_evening_task_start = model.NewBoolVar('stage 2 evening in {} {}'.format(d, suffix))
                         model.Add(start == start_time_evening ).OnlyEnforceIf([l_stage_2_evening_task_start, l_lunch_batch.Not()])
-                        l_stage_2_evening_start.append(start_time_evening)
+                        l_stage_2_evening_start.append(l_stage_2_evening_task_start)
                     # if we have this job at evening, one of the evening start day must be chosen
                     model.Add(sum(s for s in l_stage_2_evening_start) == 1).OnlyEnforceIf(l_lunch_batch.Not())
 
 
 
                 else: # category 1 can only happen at evening batch
-                    model.Add(duration == paras['process_category'][six_hour_idx])
+                    model.Add(duration == paras['duration_2'][six_hour_idx])
                     l_stage_2_evening_start = []
                     for d in days:
                         # if this task start at day d, make sure it start at 12pm
-                        start_time_evening = paras['start_2'][six_hour_idx] + d * 24 * 1440
+                        if d == paras['days'] - 1: continue
+                        start_time_evening = paras['start_2'][six_hour_idx] + d * 24 * 60
+                        print(f'start time evening {start_time_evening}')
                         l_stage_2_evening_task_start = model.NewBoolVar('stage 2 evening in {} {}'.format(d, suffix))
                         model.Add(start == start_time_evening ).OnlyEnforceIf(l_stage_2_evening_task_start)
-                        l_stage_2_evening_start.append(start_time_evening)
+                        l_stage_2_evening_start.append(l_stage_2_evening_task_start)
                     # if we have this job at evening, one of the evening day must be chosen
                     model.Add(sum(s for s in l_stage_2_evening_start) == 1)
                 # what about the starting time for this task
             else:
+                model.Add(duration == OpsDuration[j][stage])
             # for all tasks except stage 2, add constraint that end time before shift over at 6pm, start time after 8am for every task on the same day
                 l_in_day = {}
                 for d in days:
@@ -174,21 +181,39 @@ def lab_model():
     # add capacity constraint for stage 0
     # here the machine capacity 1 means for each machine, it can only perform one job at the same time
     # for stage 2, we have 1000 machines
-    capacity = [1, 2, 1000, 2]
+    capacity = [10, 20, 1000, 2]
     for stage in paras['allTasks']:
         # capacity is 1, means no tasks at the same stage can overlap
         # capacity is 2, means two tasks can overlap, as we have two machines
         # stage 2 has 1000 machines, ha
         model.AddCumulative(stage_tasks[stage],[1] * len(stage_tasks[stage]), capacity[stage])
 
+    # lets start with object to be makespan
 
     print(f'starts {start_job}')
     print(f'ends {end_job}')
     print(f'durations { durations}')
     print(f'stage tasks {stage_tasks}')
 
+    # Makespan objective.
+    obj_var = model.NewIntVar(0, horizon, 'makespan')
+    model.AddMaxEquality(obj_var, last_end)
 
+    #model.Minimize(sum(ends[i] - starts[i] for i in allJobs))
+    model.Minimize(obj_var)
 
+    # Solve.
+    solver = cp_model.CpSolver()
+    solver.parameters.max_time_in_seconds = 60 * 60 * 2
+    status = solver.Solve(model)
+    print(status, cp_model.INFEASIBLE)
+    # Print solution.
+    if status == cp_model.FEASIBLE or status == cp_model.OPTIMAL:
+        print(status)
+        for j in paras['allJobs']:
+            for t in paras['allTasks']:
+                print(f'{j} {t}')
+                print('start {}, duration {}, end {}'.format(solver.Value(start_job[j][t]), solver.Value(durations[j][t]), solver.Value(end_job[j][t])))
 # step 1 see if cumulative works for optional job
 def create_model():
     jobs = [10, 20, 10] # duration
