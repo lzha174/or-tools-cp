@@ -1,5 +1,7 @@
-from ortools.sat.python import cp_model
 import collections
+
+from ortools.sat.python import cp_model
+from google.protobuf import text_format
 
 import drawing.draw
 from drawing import draw
@@ -73,27 +75,43 @@ def lab_model():
     # define task intervals for each job
 
     # starting time of tasks of each job
-    start_job = {} # index by job_id
+    start_job = {} # index by job_id, array of tasks
     # ending time of tasks of each job
     end_job = {}
     durations = {}
     jobs = {} # intervals index by job_id, task id
+    stage_tasks = {} # indexed by stage id
     for j in paras['allJobs']:
         start_job[j] = []
         end_job[j] = []
         durations[j] = []
-        for t in paras['allTasks']:
-            suffix = f'job {j} task {t}'
+
+        previous_end = None
+
+        for stage in paras['allTasks']:
+            suffix = f'job {j} task {stage}'
             start = model.NewIntVar(0, horizon, 'start ' + suffix)
 
             duration = model.NewIntVar(0, maxDuration, 'duration' + suffix)
 
             end = model.NewIntVar(0, horizon, 'end ' + suffix)
+
+            # Add precedence with previous task in the same job.
+            if previous_end is not None:
+                model.Add(start >= previous_end)
+            previous_end = end
+
             task_interval = model.NewIntervalVar(start, duration, end, 'interval '+ suffix)
-            jobs[j, t] = task_interval
+            jobs[j, stage] = task_interval
+
+            if stage not in stage_tasks:
+                stage_tasks[stage] = [task_interval]
+            else:
+                stage_tasks[stage].append(task_interval)
+
     
             # add constraint for duration for stage 2
-            if t == 2:
+            if stage == 2:
                 if category[j] == 0:
                     # this job can start at both batch
                     l_lunch_batch = model.NewBoolVar('lunch '+ suffix)
@@ -138,23 +156,36 @@ def lab_model():
                     model.Add(sum(s for s in l_stage_2_evening_start) == 1)
                 # what about the starting time for this task
             else:
-            # add constraint that end time before shift over at 6pm, start time after 8am for every task except stage 2
+            # for all tasks except stage 2, add constraint that end time before shift over at 6pm, start time after 8am for every task on the same day
                 l_in_day = {}
                 for d in days:
-                    l_in_d = model.NewBoolVar('task in {d}')
+                    l_in_d = model.NewBoolVar('task of {j} in {d}')
                     model.Add(start >= starts_time[d]).OnlyEnforceIf(l_in_d)
                     model.Add(end <= ends_time[d]).OnlyEnforceIf(l_in_d)
                     l_in_day[d] = l_in_d
+                # one of the days must be chosen
                 model.AddBoolXOr([item for key, item in l_in_day.items()])
+
+
 
             start_job[j].append(start)
             end_job[j].append(end)
             durations[j].append(duration)
+    # add capacity constraint for stage 0
+    # here the machine capacity 1 means for each machine, it can only perform one job at the same time
+    # for stage 2, we have 1000 machines
+    capacity = [1, 2, 1000, 2]
+    for stage in paras['allTasks']:
+        # capacity is 1, means no tasks at the same stage can overlap
+        # capacity is 2, means two tasks can overlap, as we have two machines
+        # stage 2 has 1000 machines, ha
+        model.AddCumulative(stage_tasks[stage],[1] * len(stage_tasks[stage]), capacity[stage])
 
 
     print(f'starts {start_job}')
     print(f'ends {end_job}')
     print(f'durations { durations}')
+    print(f'stage tasks {stage_tasks}')
 
 
 
