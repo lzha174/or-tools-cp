@@ -12,7 +12,7 @@ paras = {
     'days': 3, # planning for 3 days
     'start':8, # start time for stage 0, 1, 3 every day, 8am
     'end': 18, # end time for stage 0,1,3 every day 6pm
-    'start_2': [12, 18], # start time for category 0 and 1 at stage 2, 12pm, and 6 pm
+    'start_2': [12 * 60, 18 * 60], # start time for category 0 and 1 at stage 2, 12pm, and 6 pm
     'duration_2': [2 *60 , 9 * 60] # duration for category 0 and 1 at stage 2 in minutes
 }
 
@@ -49,7 +49,11 @@ def lab_model():
     # define starting time, ending time in mins for 3 days
 
     OpsDuration = paras['job_data']
-    cagegory = paras['process_category']
+    maxDuration = 540
+
+    category = paras['process_category']
+    two_hour_idx = 0
+    six_hour_idx = 1
 
     days = range(paras['days'])
     starts_time = []
@@ -73,6 +77,7 @@ def lab_model():
     # ending time of tasks of each job
     end_job = {}
     durations = {}
+    jobs = {} # intervals index by job_id, task id
     for j in paras['allJobs']:
         start_job[j] = []
         end_job[j] = []
@@ -81,24 +86,72 @@ def lab_model():
             suffix = f'job {j} task {t}'
             start = model.NewIntVar(0, horizon, 'start ' + suffix)
 
-            duration = model.NewIntVar(0, 540, 'duratin' + suffix)
+            duration = model.NewIntVar(0, maxDuration, 'duration' + suffix)
 
             end = model.NewIntVar(0, horizon, 'end ' + suffix)
-
-
-            start_job[j].append(start)
-            end_job[j].append(end)
-
-            durations[j].append(duration)
+            task_interval = model.NewIntervalVar(start, duration, end, 'interval '+ suffix)
+            jobs[j, t] = task_interval
     
             # add constraint for duration for stage 2
             if t == 2:
-                if cagegory[j] == 0:
+                if category[j] == 0:
                     # this job can start at both batch
                     l_lunch_batch = model.NewBoolVar('lunch '+ suffix)
-                    l_evening_batch = model.NewBoolVar('evening '+ suffix)
-                    model.
-    
+                    # lunch batch take 2 hours
+                    model.Add(duration == paras['process_category'][two_hour_idx]).OnlyEnforceIf(l_lunch_batch)
+                    # starting time is at noon
+                    l_stage_2_lunch_start = []
+                    for d in days:
+                        # if this task start at day d, make sure it start at 12pm
+                        start_time_lunch = paras['start_2'][two_hour_idx] + d * 24 * 1440
+                        l_stage_2_lunch_task_start = model.NewBoolVar('stage 2 lunch in {} {}'.format(d, suffix))
+                        model.Add(start == start_time_lunch ).OnlyEnforceIf([l_stage_2_lunch_task_start, l_lunch_batch])
+                        l_stage_2_lunch_start.append(l_stage_2_lunch_task_start)
+                    # if we have this job at lunch, one of the mid day must be chosen
+                    model.Add(sum(s for s in l_stage_2_lunch_start) == 1).OnlyEnforceIf(l_lunch_batch)
+
+                    # starting time is evening
+                    # evening batch take 6 hours
+                    model.Add(duration == paras['process_category'][six_hour_idx]).OnlyEnforceIf(l_lunch_batch.Not())
+                    l_stage_2_evening_start = []
+                    for d in days:
+                        # if this task start at day d, make sure it start at 12pm
+                        start_time_evening = paras['start_2'][six_hour_idx] + d * 24 * 1440
+                        l_stage_2_evening_task_start = model.NewBoolVar('stage 2 evening in {} {}'.format(d, suffix))
+                        model.Add(start == start_time_evening ).OnlyEnforceIf([l_stage_2_evening_task_start, l_lunch_batch.Not()])
+                        l_stage_2_evening_start.append(start_time_evening)
+                    # if we have this job at evening, one of the evening start day must be chosen
+                    model.Add(sum(s for s in l_stage_2_evening_start) == 1).OnlyEnforceIf(l_lunch_batch.Not())
+
+
+
+                else: # category 1 can only happen at evening batch
+                    model.Add(duration == paras['process_category'][six_hour_idx])
+                    l_stage_2_evening_start = []
+                    for d in days:
+                        # if this task start at day d, make sure it start at 12pm
+                        start_time_evening = paras['start_2'][six_hour_idx] + d * 24 * 1440
+                        l_stage_2_evening_task_start = model.NewBoolVar('stage 2 evening in {} {}'.format(d, suffix))
+                        model.Add(start == start_time_evening ).OnlyEnforceIf(l_stage_2_evening_task_start)
+                        l_stage_2_evening_start.append(start_time_evening)
+                    # if we have this job at evening, one of the evening day must be chosen
+                    model.Add(sum(s for s in l_stage_2_evening_start) == 1)
+                # what about the starting time for this task
+            else:
+            # add constraint that end time before shift over at 6pm, start time after 8am for every task except stage 2
+                l_in_day = {}
+                for d in days:
+                    l_in_d = model.NewBoolVar('task in {d}')
+                    model.Add(start >= starts_time[d]).OnlyEnforceIf(l_in_d)
+                    model.Add(end <= ends_time[d]).OnlyEnforceIf(l_in_d)
+                    l_in_day[d] = l_in_d
+                model.AddBoolXOr([item for key, item in l_in_day.items()])
+
+            start_job[j].append(start)
+            end_job[j].append(end)
+            durations[j].append(duration)
+
+
     print(f'starts {start_job}')
     print(f'ends {end_job}')
     print(f'durations { durations}')
