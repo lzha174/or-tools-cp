@@ -16,26 +16,35 @@ def draw_gannt(x_pairs, stage = 0, xlim = [480,3960]):
     fig, ax = plt.subplots()
     startY = 10
 
-
+    minX = 1e5
+    maxX = -1
     for j in x_pairs:
         #https://matplotlib.org/stable/api/_as_gen/matplotlib.axes.Axes.broken_barh.html#matplotlib.axes.Axes.broken_barh
         # Axes.broken_barh(xranges, yrange, *, data=None, **kwargs)[source]
         #  xrange ssequence of tuples (xmin, xwidth), yrange(ymin, yheight)
+        if j[0] < minX:
+            minX = j[0]
+        if j[0] + j [1]> maxX:
+            maxX = j[0] + j[1]
+
         color = randint(0, no_of_colors - 1)
         ax.broken_barh([j], (startY, 10), facecolors=colors[color])
         start = f'{j[0]}'
         value = f'{j[1]}'
-        ax.text(x=j[0] -200 , y=startY, s=start)
+        #ax.text(x=j[0] -200 , y=startY, s=start)
         ax.text(x=j[0] + j[1], y=startY, s= value)
-        startY += 10
+        startY += 20
 
     ax.set_title(f'Tasks at stage {stage}')
-    ax.set_ylim(0, 220)
-    ax.set_xlim(xlim[0], xlim[1])
+    ax.set_ylim(0, len(x_pairs) * 10)
+    ax.set_xlim(minX, maxX)
     ax.set_xlabel('mintues since start')
-    ax.set_yticks([15 + 10*idx for idx, j in enumerate(x_pairs)])
+    ax.set_yticks([15 + 20*idx for idx, j in enumerate(x_pairs)])
     ax.set_yticklabels(['job '+str(idx) for idx, j in enumerate(x_pairs)])
 
     ax.grid(True)
 
-    plt.show()
+
+    fileName = f'stage {stage} jobs'
+    plt.savefig(fileName)
+    #plt.show()

@@ -11,17 +11,18 @@ paras = {
     'job_data':[],
     'category': [],# 0 means it can be at 12-2pm or 6pm-3am batch, 1 means it only be at 6pm-3pm batch, processing time is 2 hour or 9 hours
     'ready_time': [],
-    'days': 9, # planning for 3 days
+    'days': 4, # planning for 3 days
     'start':8, # start time for stage 0, 1, 3 every day, 8am
     'end': 18, # end time for stage 0,1,3 every day 6pm
     'start_2': [12 * 60, 18 * 60], # start time for category 0 and 1 at stage 2, 12pm, and 6 pm
-    'duration_2': [2 *60 , 9 * 60], # duration nb jobsfor category 0 and 1 at stage 2 in minutes
-    'max_jobs': 40,
-    'max_serach_time_sec': 1200
+    'duration_2': [2 *60 , 9 * 60], # duration for category 0 and 1 at stage 2 in minutes
+    'max_jobs': 10,
+    'max_serach_time_sec': 30,
+    'capacity':[1, 2, 1000, 1] # how many samples can be anaylsed at the same time for each stage
 }
 
 
-def test(n = 15):
+def format_time(n = 15):
     # Given timestamp in string
     time_str = '01/01/2022 00:00:00'
     date_format_str = '%m/%d/%Y %H:%M:%S'
@@ -44,11 +45,12 @@ def process_data(row):
 
     #
     paras['job_data'].append(data)
-    paras['category'].append(row['category'])
 
-    #paras['ready_time'].append(0)
+    paras['category'].append(row['category'])
     #paras['category'].append(0)
+
     paras['ready_time'].append(row['ready_time_mins']) # base time is 2022/01/01 12:00 am
+    #paras['ready_time'].append(0)
 
 
     return
@@ -57,12 +59,9 @@ def process_data(row):
 def read_data():
 
     df = pd.read_csv ('100-jobs.csv')
-    #df = df.drop(columns = ['stage_2'])
     print(df.head)
     df.apply(process_data, axis = 1)
     print(paras['job_data'])
-
-
 
     numTasks = 4
     allTasks = range(numTasks)
@@ -154,9 +153,28 @@ def lab_model():
     
             # add constraint for duration for stage 2
             if stage == 2:
+
+                l_lunch_batch = model.NewBoolVar('lunch '+ suffix)
+
+                # starting time is evening  -- l_lunch_batch == False
+                # evening batch take 6 hours
+                model.Add(duration == paras['duration_2'][six_hour_idx]).OnlyEnforceIf(l_lunch_batch.Not())
+                l_stage_2_evening_start = []
+                for d in days:
+                    # cannot start evening batch after the last day midnite
+                    if d == paras['days'] - 1: continue
+                    # if this task start at day d, make sure it start at 12pm
+                    start_time_evening = paras['start_2'][six_hour_idx] + d * 24 * 60
+                    l_stage_2_evening_task_start = model.NewBoolVar('stage 2 evening in {} {}'.format(d, suffix))
+                    model.Add(start == start_time_evening).OnlyEnforceIf(
+                        [l_stage_2_evening_task_start, l_lunch_batch.Not()])
+                    l_stage_2_evening_start.append(l_stage_2_evening_task_start)
+                # if we have this job at evening, one of the evening start day must be chosen
+                model.Add(sum(s for s in l_stage_2_evening_start) == 1).OnlyEnforceIf(l_lunch_batch.Not())
+
                 if category[j] == 0:
                     # this job can start at both batch
-                    l_lunch_batch = model.NewBoolVar('lunch '+ suffix)
+
                     # lunch batch take 2 hours
                     model.Add(duration == paras['duration_2'][two_hour_idx]).OnlyEnforceIf(l_lunch_batch)
                     # starting time is at noon
@@ -170,36 +188,12 @@ def lab_model():
                     # if we have this job at lunch, one of the mid day must be chosen
                     model.Add(sum(s for s in l_stage_2_lunch_start) == 1).OnlyEnforceIf(l_lunch_batch)
 
-                    # starting time is evening
-                    # evening batch take 6 hours
-                    model.Add(duration == paras['duration_2'][six_hour_idx]).OnlyEnforceIf(l_lunch_batch.Not())
-                    l_stage_2_evening_start = []
-                    for d in days:
-                        if d == paras['days'] - 1: continue
-                        # if this task start at day d, make sure it start at 12pm
-                        start_time_evening = paras['start_2'][six_hour_idx] + d * 24 * 60
-                        l_stage_2_evening_task_start = model.NewBoolVar('stage 2 evening in {} {}'.format(d, suffix))
-                        model.Add(start == start_time_evening ).OnlyEnforceIf([l_stage_2_evening_task_start, l_lunch_batch.Not()])
-                        l_stage_2_evening_start.append(l_stage_2_evening_task_start)
-                    # if we have this job at evening, one of the evening start day must be chosen
-                    model.Add(sum(s for s in l_stage_2_evening_start) == 1).OnlyEnforceIf(l_lunch_batch.Not())
+
 
 
 
                 else: # category 1 can only happen at evening batch
-                    model.Add(duration == paras['duration_2'][six_hour_idx])
-                    l_stage_2_evening_start = []
-                    for d in days:
-                        # if this task start at day d, make sure it start at 12pm
-                        if d == paras['days'] - 1: continue
-                        start_time_evening = paras['start_2'][six_hour_idx] + d * 24 * 60
-                        print(f'start time evening {start_time_evening}')
-                        l_stage_2_evening_task_start = model.NewBoolVar('stage 2 evening in {} {}'.format(d, suffix))
-                        model.Add(start == start_time_evening ).OnlyEnforceIf(l_stage_2_evening_task_start)
-                        l_stage_2_evening_start.append(l_stage_2_evening_task_start)
-                    # if we have this job at evening, one of the evening day must be chosen
-                    model.Add(sum(s for s in l_stage_2_evening_start) == 1)
-                # what about the starting time for this task
+                    model.Add(l_lunch_batch == 0)
             else:
                 model.Add(duration == OpsDuration[j][stage])
             # for all tasks except stage 2, add constraint that end time before shift over at 6pm, start time after 8am for every task on the same day
@@ -212,15 +206,13 @@ def lab_model():
                 # one of the days must be chosen
                 model.AddBoolXOr([item for key, item in l_in_day.items()])
 
-
-
             start_job[j].append(start)
             end_job[j].append(end)
             durations[j].append(duration)
     # add capacity constraint for stage 0
     # here the machine capacity 1 means for each machine, it can only perform one job at the same time
     # for stage 2, we have 1000 machines
-    capacity = [1, 2, 1000, 2]
+    capacity = paras['capacity']
     for stage in paras['allTasks']:
         # capacity is 1, means no tasks at the same stage can overlap
         # capacity is 2, means two tasks can overlap, as we have two machines
@@ -237,14 +229,15 @@ def lab_model():
     # Makespan objective.
     #objective_choice = 'minimise_max_end_time'
     objective_choice = 'minimise_max_case_duration'
+    #objective_choice = 'minimise_total_case_duration'
     if objective_choice == 'minimise_max_end_time':
         obj_var = model.NewIntVar(0, horizon, 'makespan')
         model.AddMaxEquality(obj_var, last_end)
         model.Minimize(obj_var)
     # try minimise total in system time
-
-    #model.Minimize(sum(last_end[i] - first_start[i] for i in paras['allJobs']))
-
+    if objective_choice == 'minimise_total_case_duration':
+        model.Minimize(sum(last_end[i] - first_start[i] for i in paras['allJobs']))
+        #model.Minimize(sum(last_end[i]  for i in paras['allJobs']))
     # try minimise max in system time
     if objective_choice == 'minimise_max_case_duration':
         in_systems = []
@@ -273,8 +266,8 @@ def lab_model():
             for t in paras['allTasks']:
                 print(f'{j} {t}')
                 print('start {}, duration {}, end {}'.format(solver.Value(start_job[j][t]), solver.Value(durations[j][t]), solver.Value(end_job[j][t])))
-                start_time = test(solver.Value(start_job[j][t]))
-                end_time = test(solver.Value(end_job[j][t]))
+                start_time = format_time(solver.Value(start_job[j][t]))
+                end_time = format_time(solver.Value(end_job[j][t]))
 
                 formatted_start_time[j, t] = start_time
                 formatted_end_time[j,t] = end_time
@@ -305,30 +298,33 @@ def lab_model():
             for t in paras['allTasks']:
                 print(formatted_end_time[j,t])
                 
-        stage = 1
-        x_pairs = x_pairs_dict[stage]
 
-
-
-        intervals = []
-        for x in x_pairs:
-            intervals.append(pd.Interval(x[0], x[0] + x[1]))
-        print('intevals are' , intervals)
-        ovrelapped_flag = False
-        for idx, a in enumerate(intervals):
-            for idx1, b in enumerate(intervals):
-                if idx1 <= idx : continue
-                if  (a.overlaps(b)):
-                    ovrelapped_flag = True
-        print ('is there overlap ',ovrelapped_flag)
-        print('max in_system duration =', solver.ObjectiveValue() / 1440)
+        if objective_choice == 'minimise_total_case_duration':
+            print('average duration {}'.format(solver.ObjectiveValue() / 1440 / paras['max_jobs']))
+        else: print('max in_system duration =', solver.ObjectiveValue() / 1440)
         if status == cp_model.FEASIBLE: print('Fesible')
         else: print('Optimal')
-        draw.draw_gannt(x_pairs, stage)
+
+        for stage in paras['allTasks']:
+            x_pairs = x_pairs_dict[stage]
+
+            draw.draw_gannt(x_pairs, stage)
+
+            intervals = []
+            for x in x_pairs:
+                intervals.append(pd.Interval(x[0], x[0] + x[1]))
+            print('intevals are', intervals)
+            ovrelapped_flag = False
+            for idx, a in enumerate(intervals):
+                for idx1, b in enumerate(intervals):
+                    if idx1 <= idx: continue
+                    if (a.overlaps(b)):
+                        ovrelapped_flag = True
+            print('is there overlap ', ovrelapped_flag)
 
 
         
 
 read_data()
 lab_model()
-test()
+format_time()
