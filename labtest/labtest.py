@@ -5,15 +5,14 @@ from google.protobuf import text_format
 
 import drawing.draw
 from drawing import draw
-
+import interval
 import pandas as pd
 from datetime import datetime
 from datetime import timedelta
 paras = {
     'job_data':[],
-    'category': [],
+    'category': [],# 0 means it can be at 12-2pm or 6pm-3am batch, 1 means it only be at 6pm-3pm batch, processing time is 2 hour or 9 hours
     'ready_time': [],
-    'process_category': [0,	0,	1,	0,	0,	1,	1,	1,	1,	1],# 0 means it can be at 12-2pm or 6pm-3am batch, 1 means it only be at 6pm-3pm batch, processing time is 2 hour or 9 hours
     'days': 3, # planning for 3 days
     'start':8, # start time for stage 0, 1, 3 every day, 8am
     'end': 18, # end time for stage 0,1,3 every day 6pm
@@ -40,8 +39,13 @@ def test(n = 15):
 
 def process_data(row):
     data = [row['stage_0'], row['stage_1'], row['stage_2'], row['stage_3']] # processing time in minutes at every stage escept stage 2, fixed time
+
+    #
     paras['job_data'].append(data)
     paras['category'].append(row['category'])
+
+    #paras['ready_time'].append(0)
+    #paras['category'].append(0)
     paras['ready_time'].append(row['ready_time_mins']) # base time is 2022/01/01 12:00 am
 
 
@@ -157,7 +161,7 @@ def lab_model():
                         # if this task start at day d, make sure it start at 12pm
                         start_time_lunch = paras['start_2'][two_hour_idx] + d * 24 * 60
                         l_stage_2_lunch_task_start = model.NewBoolVar('stage 2 lunch in {} {}'.format(d, suffix))
-                        #model.Add(start == start_time_lunch ).OnlyEnforceIf([l_stage_2_lunch_task_start, l_lunch_batch])
+                        model.Add(start == start_time_lunch ).OnlyEnforceIf([l_stage_2_lunch_task_start, l_lunch_batch])
                         l_stage_2_lunch_start.append(l_stage_2_lunch_task_start)
                     # if we have this job at lunch, one of the mid day must be chosen
                     model.Add(sum(s for s in l_stage_2_lunch_start) == 1).OnlyEnforceIf(l_lunch_batch)
@@ -227,24 +231,28 @@ def lab_model():
     print(f'stage tasks {stage_tasks}')
 
     # Makespan objective.
-    #obj_var = model.NewIntVar(0, horizon, 'makespan')
-    #model.AddMaxEquality(obj_var, last_end)
-    #model.Minimize(obj_var)
+    #objective_choice = 'minimise_max_end_time'
+    objective_choice = 'minimise_max_case_duration'
+    if objective_choice == 'minimise_max_end_time':
+        obj_var = model.NewIntVar(0, horizon, 'makespan')
+        model.AddMaxEquality(obj_var, last_end)
+        model.Minimize(obj_var)
     # try minimise total in system time
 
     #model.Minimize(sum(last_end[i] - first_start[i] for i in paras['allJobs']))
 
     # try minimise max in system time
-    in_systems = []
-    for j in paras['allJobs']:
-        suffix = 'in_system_{j}'
-        in_system_var = model.NewIntVar(0, horizon, suffix)
-        model.Add(in_system_var == last_end[j] - first_start[j])
-        in_systems.append(in_system_var)
+    if objective_choice == 'minimise_max_case_duration':
+        in_systems = []
+        for j in paras['allJobs']:
+            suffix = 'in_system_{j}'
+            in_system_var = model.NewIntVar(0, horizon, suffix)
+            model.Add(in_system_var == last_end[j] - first_start[j])
+            in_systems.append(in_system_var)
 
-    in_system_obj = model.NewIntVar(0, horizon, 'in_system')
-    model.AddMaxEquality(in_system_obj, in_systems)
-    model.Minimize(in_system_obj)
+        in_system_obj = model.NewIntVar(0, horizon, 'in_system')
+        model.AddMaxEquality(in_system_obj, in_systems)
+        model.Minimize(in_system_obj)
     # Solve.
     solver = cp_model.CpSolver()
     solver.parameters.max_time_in_seconds = 60 * 60 * 2
@@ -256,7 +264,7 @@ def lab_model():
         case_durations = []
         formatted_start_time = {} # indexed by job id and task id
         formatted_end_time = {}
-
+        x_pairs_dict = {} # indexed by stage id store (start_time, duration) for all jobs
         for j in paras['allJobs']:
             for t in paras['allTasks']:
                 print(f'{j} {t}')
@@ -266,8 +274,16 @@ def lab_model():
 
                 formatted_start_time[j, t] = start_time
                 formatted_end_time[j,t] = end_time
-
+                duration = solver.Value(durations[j][t])
+                
+                if t not in x_pairs_dict:
+                    x_pairs_dict[t] = [(solver.Value(start_job[j][t]), duration )]
+                else:
+                    x_pairs_dict[t].append((solver.Value(start_job[j][t]), duration ))
+            # covert to decimal duration
+            
             job_duration = (solver.Value(last_end[j]) - solver.Value(first_start[j]))/1440
+
 
             case_durations.append(job_duration)
         print('max in_system duration =',solver.ObjectiveValue()/1440)
@@ -284,6 +300,26 @@ def lab_model():
         for j in paras['allJobs']:
             for t in paras['allTasks']:
                 print(formatted_end_time[j,t])
+                
+        stage = 1
+        x_pairs = x_pairs_dict[stage]
+
+
+
+        intervals = []
+        for x in x_pairs:
+            intervals.append(pd.Interval(x[0], x[0] + x[1]))
+        print('intevals are' , intervals)
+        ovrelapped_flag = False
+        for idx, a in enumerate(intervals):
+            for idx1, b in enumerate(intervals):
+                if idx1 <= idx : continue
+                if  (a.overlaps(b)):
+                    ovrelapped_flag = True
+        print ('is there overlap ',ovrelapped_flag)
+        draw.draw_gannt(x_pairs, stage)
+        
+
 # step 1 see if cumulative works for optional job
 def create_model():
     jobs = [10, 20, 10] # duration
