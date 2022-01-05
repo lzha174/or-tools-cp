@@ -1,11 +1,9 @@
 import collections
 
 from ortools.sat.python import cp_model
-from google.protobuf import text_format
 
-import drawing.draw
 from drawing import draw
-import interval
+
 import pandas as pd
 from datetime import datetime
 from datetime import timedelta
@@ -13,11 +11,13 @@ paras = {
     'job_data':[],
     'category': [],# 0 means it can be at 12-2pm or 6pm-3am batch, 1 means it only be at 6pm-3pm batch, processing time is 2 hour or 9 hours
     'ready_time': [],
-    'days': 3, # planning for 3 days
+    'days': 9, # planning for 3 days
     'start':8, # start time for stage 0, 1, 3 every day, 8am
     'end': 18, # end time for stage 0,1,3 every day 6pm
     'start_2': [12 * 60, 18 * 60], # start time for category 0 and 1 at stage 2, 12pm, and 6 pm
-    'duration_2': [2 *60 , 9 * 60] # duration for category 0 and 1 at stage 2 in minutes
+    'duration_2': [2 *60 , 9 * 60], # duration nb jobsfor category 0 and 1 at stage 2 in minutes
+    'max_jobs': 40,
+    'max_serach_time_sec': 1200
 }
 
 
@@ -38,6 +38,8 @@ def test(n = 15):
 
 
 def process_data(row):
+
+    if len(paras['job_data']) >= paras['max_jobs']: return
     data = [row['stage_0'], row['stage_1'], row['stage_2'], row['stage_3']] # processing time in minutes at every stage escept stage 2, fixed time
 
     #
@@ -49,23 +51,24 @@ def process_data(row):
     paras['ready_time'].append(row['ready_time_mins']) # base time is 2022/01/01 12:00 am
 
 
+    return
+
+
 def read_data():
 
-    df = pd.read_csv ('10-jobs.csv')
+    df = pd.read_csv ('100-jobs.csv')
     #df = df.drop(columns = ['stage_2'])
     print(df.head)
     df.apply(process_data, axis = 1)
     print(paras['job_data'])
 
-    nbJobs = df.shape[0]
-    allJobs = range(nbJobs)
-    print('nb jobs {}'.format(nbJobs))
+
 
     numTasks = 4
     allTasks = range(numTasks)
-
-    paras['nbJobs'] = nbJobs
-    paras['allJobs'] = allJobs
+    print(len(paras['job_data']), len(paras['ready_time']))
+    paras['nbJobs'] = len(paras['job_data'])
+    paras['allJobs'] = range(len(paras['job_data']))
     paras['numTasks'] = numTasks
     paras['allTasks'] = allTasks
 
@@ -128,6 +131,7 @@ def lab_model():
 
             # first task start time >= ready time
             if stage == 0:
+                print('j=', j)
                 model.Add(start >= paras['ready_time'][j])
                 first_start.append(start)
 
@@ -255,9 +259,9 @@ def lab_model():
         model.Minimize(in_system_obj)
     # Solve.
     solver = cp_model.CpSolver()
-    solver.parameters.max_time_in_seconds = 60 * 60 * 2
+    solver.parameters.max_time_in_seconds = paras['max_serach_time_sec']
     status = solver.Solve(model)
-    print(status, cp_model.INFEASIBLE)
+    print(status, cp_model.INFEASIBLE, cp_model.FEASIBLE)
     # Print solution.
     if status == cp_model.FEASIBLE or status == cp_model.OPTIMAL:
         print(status)
@@ -286,7 +290,7 @@ def lab_model():
 
 
             case_durations.append(job_duration)
-        print('max in_system duration =',solver.ObjectiveValue()/1440)
+
 
         for j in paras['allJobs']:
             print(f'{case_durations[j]}')
@@ -317,111 +321,13 @@ def lab_model():
                 if  (a.overlaps(b)):
                     ovrelapped_flag = True
         print ('is there overlap ',ovrelapped_flag)
+        print('max in_system duration =', solver.ObjectiveValue() / 1440)
+        if status == cp_model.FEASIBLE: print('Fesible')
+        else: print('Optimal')
         draw.draw_gannt(x_pairs, stage)
+
+
         
-
-# step 1 see if cumulative works for optional job
-def create_model():
-    jobs = [10, 20, 10] # duration
-    machines = 2
-    allJobs = range(len(jobs))
-    allMachines = range(machines)
-
-    model = cp_model.CpModel()
-    horizon = 80
-    # a job can be done on any of two machine
-    task_type = collections.namedtuple('task', 'start end duration present interval')
-    jobVars = []
-    starts = []
-    ends = []
-    
-    job_starts = {}  # indexed by (job_id).
-    job_presences = {} # indexed by (job_id, machine_id)
-
-    # store jobs on each machine
-    intervals_per_machines = collections.defaultdict(list)
-    presences_per_machines = collections.defaultdict(list)
-    # store start on each machine
-    starts_machines = {} # (job_id, machine_id)
-    ends_machines = {} # job_id, machine_id
-    # store end on each machine
-    ends_per_machines = collections.defaultdict(list)
-
-
-    # create job intervals
-    for idx in allJobs:
-        start = model.NewIntVar(0, horizon, name='start of job %i' % (idx))
-        duration = jobs[idx]
-        end = model.NewIntVar(0, horizon, name = 'end of job %i' % (idx))
-        j_interval = model.NewIntervalVar(start, duration, end, name = 'job %i' % (idx))
-        #jobVars[idx] = task_type(start= start_v, end = end_v, duration = duration, present = True, interval = j_interval)
-        jobVars.append(j_interval)
-        starts.append(start)
-        ends.append(end)
-        #remember start of each job
-        job_starts[idx] = start
-    
-        # create optional jobs:
-        l_presences = []
-        for mid in allMachines:
-                suffix = 'optional of {} on m {}'.format(idx, mid)
-                l_start = model.NewIntVar(0, horizon, name='start '+suffix)
-                l_presence = model.NewBoolVar('bool' + suffix)
-                l_presences.append(l_presence)
-                l_duration = jobs[idx]
-                l_end = model.NewIntVar(0, horizon, name = 'end ' + suffix)
-                optional_interval = model.NewOptionalIntervalVar(l_start, l_duration, l_end, l_presence, suffix)
-
-                # Link the master variables with the local ones.
-                model.Add(start == l_start).OnlyEnforceIf(l_presence)
-                model.Add(duration == l_duration).OnlyEnforceIf(l_presence)
-                model.Add(end == l_end).OnlyEnforceIf(l_presence)
-
-                #add interval to the correct machine
-                intervals_per_machines[mid].append(optional_interval)
-                starts_machines[idx, mid] = l_start
-                ends_machines[idx, mid] = l_end
-                
-                job_presences[idx, mid] = l_presence
-
-            # one of machine must perform this job
-        model.Add(sum(l_presences) == 1)
-    
-    for mid in allMachines:
-        model.AddCumulative(intervals_per_machines[mid], [1] * len(intervals_per_machines[mid]), 1)
-    #    model.AddNoOverlap(intervals_per_machines[mid])
-    # add that machine capacity is 2
-    #model.AddCumulative(jobVars, [1] * len(jobVars), 2)
-
-    print(starts_machines)
-
-    # minimise total processing time
-    makespan = model.NewIntVar(0, 80, 'makespan')
-    model.AddMaxEquality(makespan, ends)
-
-    #model.Minimize(sum(ends[i] - starts[i] for i in allJobs))
-    model.Minimize(makespan)
-
-    # Solve.
-    solver = cp_model.CpSolver()
-    solver.parameters.max_time_in_seconds = 60 * 60 * 2
-    status = solver.Solve(model)
-    # Print solution.
-    if status == cp_model.FEASIBLE or status == cp_model.OPTIMAL:
-        x_pairs = []
-        for job_id in allJobs:
-            start_value = solver.Value(starts[job_id])
-            duration = jobs[job_id]
-            x_pairs.append((start_value, duration))
-            end_value = solver.Value(ends[job_id])
-            print(start_value, end_value)
-            for mid in allMachines:
-                if solver.BooleanValue(job_presences[job_id, mid]):
-                    print('perform job {}  on machine {}'.format(job_id, mid))
-                    print(solver.Value(starts_machines[job_id, mid]), solver.Value(ends_machines[job_id, mid]))
-
-
-        draw.draw_gannt(x_pairs)
 
 read_data()
 lab_model()
