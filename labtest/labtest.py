@@ -16,7 +16,7 @@ paras = {
     'end': 18, # end time for stage 0,1,3 every day 6pm
     'start_2': [12 * 60, 18 * 60], # start time for category 0 and 1 at stage 2, 12pm, and 6 pm
     'duration_2': [2 *60 , 9 * 60], # duration for category 0 and 1 at stage 2 in minutes
-    'max_jobs': 10,
+    'max_jobs': 400,
     'max_serach_time_sec': 30,
     'capacity':[5, 10, 1000, 15], # how many samples can be anaylsed at the same time for each stage
     'stage':[], # the job starting tage for this scheduling period, it can be floatted from previous planning period, only add intervals for the reamining stages
@@ -63,8 +63,8 @@ def process_data(row):
     paras['ready_time'].append(row['ready_time_mins']) # base time is 2022/01/01 12:00 am
     #paras['ready_time'].append(0)
 
-    #paras['stage'].append(row.stage)
-    paras['stage'].append(0)
+    paras['stage'].append(row.stage)
+    #paras['stage'].append(0)
     
     paras['job_weight'].append(1)
 
@@ -72,7 +72,7 @@ def process_data(row):
     return
 
 def load_data():
-    df = pd.read_csv('100-jobs.csv')
+    df = pd.read_csv('600-jobs.csv')
     paras['df'] = df
 
 def read_data(day_index = 0):
@@ -137,17 +137,18 @@ def lab_model(day_index = 0):
         #durations[j] = []
 
         previous_end = None
-
+        print('j=', j)
         for stage in paras['allTasks']:
             # only process reamining tasks
             if stage < paras['stage'][j]: continue
+            print('stage = ', stage)
             suffix = f'job {j} task {stage}'
 
-            start = model.NewIntVar(0, horizon, 'start ' + suffix)
+            start = model.NewIntVar(starts_time[0], horizon, 'start ' + suffix)
 
             duration = model.NewIntVar(0, maxDuration, 'duration' + suffix)
 
-            end = model.NewIntVar(0, horizon, 'end ' + suffix)
+            end = model.NewIntVar(starts_time[0], horizon, 'end ' + suffix)
 
 
             start_job[j, stage] = start
@@ -155,8 +156,8 @@ def lab_model(day_index = 0):
             durations[j, stage] = duration
 
             # first task start time >= ready time
-            if stage == 0:
-                print('j=', j)
+            if stage == paras['stage'][j]:
+
                 model.Add(start >= paras['ready_time'][j])
                 first_start.append(start)
 
@@ -190,7 +191,7 @@ def lab_model(day_index = 0):
                     # cannot start evening batch after the last day midnite
                     if d == paras['days'] - 1: continue
                     # if this task start at day d, make sure it start at 12pm
-                    start_time_evening = paras['start_2'][six_hour_idx] + d * 24 * 60
+                    start_time_evening = paras['start_2'][six_hour_idx] + (d + day_index) * 24 * 60
                     l_stage_2_evening_task_start = model.NewBoolVar('stage 2 evening in {} {}'.format(d, suffix))
                     model.Add(start == start_time_evening).OnlyEnforceIf(
                         [l_stage_2_evening_task_start, l_lunch_batch.Not()])
@@ -207,7 +208,7 @@ def lab_model(day_index = 0):
                     l_stage_2_lunch_start = []
                     for d in days:
                         # if this task start at day d, make sure it start at 12pm
-                        start_time_lunch = paras['start_2'][two_hour_idx] + d * 24 * 60
+                        start_time_lunch = paras['start_2'][two_hour_idx] + (d + day_index) * 24 * 60
                         l_stage_2_lunch_task_start = model.NewBoolVar('stage 2 lunch in {} {}'.format(d, suffix))
                         model.Add(start == start_time_lunch ).OnlyEnforceIf([l_stage_2_lunch_task_start, l_lunch_batch])
                         l_stage_2_lunch_start.append(l_stage_2_lunch_task_start)
@@ -297,7 +298,10 @@ def lab_model(day_index = 0):
                 myValue = start_job.get((j,t), None)
 
                 if myValue is None: continue
-                if solver.Value(myValue)>= currentDayEndingTime and t != 2:
+                # if stage is 1 next day, this iis the floatted stge, if stage is 2 at noon next day, what now?
+                # how to get floatted job? if this job is not finished today, what is finished?
+                # start of any task of this job is after today
+                if (t <=1 or t>=3) and solver.Value(myValue)>= currentDayEndingTime:
                     # this task needs to perform next day from 8am
                     paras['floatted_jobs'].append(j)
                     # remember the floatted stage
@@ -395,10 +399,14 @@ def lab_model(day_index = 0):
         
 
 load_data()
+
 read_data()
 lab_model()
-format_time()
 
-# call label model again
 read_data(1)
 lab_model(1)
+
+# call label model again
+read_data(2)
+lab_model(2)
+
