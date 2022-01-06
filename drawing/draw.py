@@ -8,7 +8,7 @@ def draw_step(x = [], y = []):
     plt.step(x, y, label='pre (default)')
     plt.show()
     
-def draw_gannt(x_pairs, stage = 0, xlim = [480,3960]):
+def draw_gannt(x_pairs, stage = 0, starting_times = []):
     no_of_colors = len(x_pairs)
     colors = ["#" + ''.join([random.choice('0123456789ABCDEF') for i in range(6)])
              for j in range(no_of_colors)]
@@ -32,13 +32,19 @@ def draw_gannt(x_pairs, stage = 0, xlim = [480,3960]):
         start = f'{j[0]}'
         value = f'{j[1]}'
         #ax.text(x=j[0] -200 , y=startY, s=start)
-        ax.text(x=j[0] + j[1], y=startY, s= value)
+        #ax.text(x=j[0] + j[1], y=startY, s= value)
         startY += 20
 
     ax.set_title(f'Tasks at stage {stage}')
-    ax.set_ylim(0, len(x_pairs) * 10)
+    ax.set_ylim(0, len(x_pairs) * 20)
     ax.set_xlim(minX, maxX)
     ax.set_xlabel('mintues since start')
+
+    idx = np.asarray(starting_times)
+    days_tick = [f'day {i}' for i in range(len(starting_times))]
+    ax.set_xticks(idx)
+    ax.set_xticklabels(days_tick, rotation=65)
+
     ax.set_yticks([15 + 20*idx for idx, j in enumerate(x_pairs)])
     ax.set_yticklabels(['job '+str(idx) for idx, j in enumerate(x_pairs)])
 

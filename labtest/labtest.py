@@ -8,18 +8,25 @@ import pandas as pd
 from datetime import datetime
 from datetime import timedelta
 paras = {
-    'job_data':[],
+    'job_data':[], # contains processing time for each stage
     'category': [],# 0 means it can be at 12-2pm or 6pm-3am batch, 1 means it only be at 6pm-3pm batch, processing time is 2 hour or 9 hours
     'ready_time': [],
-    'days': 4, # planning for 3 days
+    'days': 2, # planning for 3 days
     'start':8, # start time for stage 0, 1, 3 every day, 8am
     'end': 18, # end time for stage 0,1,3 every day 6pm
     'start_2': [12 * 60, 18 * 60], # start time for category 0 and 1 at stage 2, 12pm, and 6 pm
     'duration_2': [2 *60 , 9 * 60], # duration for category 0 and 1 at stage 2 in minutes
     'max_jobs': 10,
     'max_serach_time_sec': 30,
-    'capacity':[1, 2, 1000, 1] # how many samples can be anaylsed at the same time for each stage
+    'capacity':[1, 2, 1000, 2], # how many samples can be anaylsed at the same time for each stage
+    'stage':[], # the job starting tage for this scheduling period, it can be floatted from previous planning period, only add intervals for the reamining stages
+    'floatted_jobs':[],  # floatted job index
+    'floatted_job_stage' : [] # floatted job next stage this will not be any stage 2 job
 }
+
+def clean_data():
+    paras['floatted_jobs'] = []
+    paras['floatted_job_stage'] = []
 
 
 def format_time(n = 15):
@@ -52,16 +59,19 @@ def process_data(row):
     paras['ready_time'].append(row['ready_time_mins']) # base time is 2022/01/01 12:00 am
     #paras['ready_time'].append(0)
 
+    paras['stage'].append(row.stage)
+
 
     return
 
 
 def read_data():
 
-    df = pd.read_csv ('100-jobs.csv')
+    df = pd.read_csv ('400-jobs.csv')
     print(df.head)
     df.apply(process_data, axis = 1)
     print(paras['job_data'])
+    print(paras['stage'])
 
     numTasks = 4
     allTasks = range(numTasks)
@@ -71,7 +81,8 @@ def read_data():
     paras['numTasks'] = numTasks
     paras['allTasks'] = allTasks
 
-def lab_model():
+def lab_model(day_index = 0):
+    clean_data()
     # every job has 4 tasks, third task is processed in batch, capacity is 1000
     # every task of job start time and end time for stage 0, 1, 3 must fall in the normal working hours 8am - 6 pm  every day
     # every task for stage 2 must start at 12pm or 6pm, first start lasts 2 hours, second start lasts 9 hours
@@ -86,12 +97,12 @@ def lab_model():
     two_hour_idx = 0
     six_hour_idx = 1
 
-    days = range(paras['days'])
+    days = range( paras['days'])
     starts_time = []
     ends_time = []
     for d in days:
-        start = 8  * 60 + d * 24 * 60
-        end = 18 * 60 + d * 24 * 60
+        start = 8  * 60 + (day_index + d) * 24 * 60
+        end = 18 * 60 + (day_index + d) * 24 * 60
         starts_time.append(start)
         ends_time.append(end)
     print(f'starting times are {starts_time}')
@@ -104,7 +115,7 @@ def lab_model():
     # define task intervals for each job
 
     # starting time of tasks of each job
-    start_job = {} # index by job_id, array of tasks
+    start_job = {} # index by job_id, stage id
     # ending time of tasks of each job
     end_job = {}
     durations = {}
@@ -112,14 +123,16 @@ def lab_model():
     stage_tasks = {} # indexed by stage id
     first_start = []
     last_end = []
-    for j in paras['allJobs']:
-        start_job[j] = []
-        end_job[j] = []
-        durations[j] = []
+    for j in range(len(paras['job_data'])):
+        #start_job[j] = {}
+        #end_job[j] =
+        #durations[j] = []
 
         previous_end = None
 
         for stage in paras['allTasks']:
+            # only process reamining tasks
+            if stage < paras['stage'][j]: continue
             suffix = f'job {j} task {stage}'
 
             start = model.NewIntVar(0, horizon, 'start ' + suffix)
@@ -127,6 +140,11 @@ def lab_model():
             duration = model.NewIntVar(0, maxDuration, 'duration' + suffix)
 
             end = model.NewIntVar(0, horizon, 'end ' + suffix)
+
+
+            start_job[j, stage] = start
+            end_job[j, stage] = end
+            durations[j, stage] = duration
 
             # first task start time >= ready time
             if stage == 0:
@@ -206,14 +224,12 @@ def lab_model():
                 # one of the days must be chosen
                 model.AddBoolXOr([item for key, item in l_in_day.items()])
 
-            start_job[j].append(start)
-            end_job[j].append(end)
-            durations[j].append(duration)
     # add capacity constraint for stage 0
     # here the machine capacity 1 means for each machine, it can only perform one job at the same time
     # for stage 2, we have 1000 machines
     capacity = paras['capacity']
     for stage in paras['allTasks']:
+        if stage < paras['stage'][j]: continue
         # capacity is 1, means no tasks at the same stage can overlap
         # capacity is 2, means two tasks can overlap, as we have two machines
         # stage 2 has 1000 machines, ha
@@ -228,23 +244,23 @@ def lab_model():
 
     # Makespan objective.
     #objective_choice = 'minimise_max_end_time'
-    objective_choice = 'minimise_max_case_duration'
-    #objective_choice = 'minimise_total_case_duration'
+    #objective_choice = 'minimise_max_case_duration'
+    objective_choice = 'minimise_total_case_duration'
     if objective_choice == 'minimise_max_end_time':
         obj_var = model.NewIntVar(0, horizon, 'makespan')
         model.AddMaxEquality(obj_var, last_end)
         model.Minimize(obj_var)
     # try minimise total in system time
     if objective_choice == 'minimise_total_case_duration':
-        model.Minimize(sum(last_end[i] - first_start[i] for i in paras['allJobs']))
+        model.Minimize(sum(last_end[i] - paras['ready_time'][i] for i in range(len(paras['job_data']))))
         #model.Minimize(sum(last_end[i]  for i in paras['allJobs']))
     # try minimise max in system time
     if objective_choice == 'minimise_max_case_duration':
         in_systems = []
-        for j in paras['allJobs']:
+        for j in range(len(paras['job_data'])):
             suffix = 'in_system_{j}'
             in_system_var = model.NewIntVar(0, horizon, suffix)
-            model.Add(in_system_var == last_end[j] - first_start[j])
+            model.Add(in_system_var == last_end[j] - paras['ready_time'][j])
             in_systems.append(in_system_var)
 
         in_system_obj = model.NewIntVar(0, horizon, 'in_system')
@@ -262,41 +278,57 @@ def lab_model():
         formatted_start_time = {} # indexed by job id and task id
         formatted_end_time = {}
         x_pairs_dict = {} # indexed by stage id store (start_time, duration) for all jobs
-        for j in paras['allJobs']:
+
+
+        # get all jobs that not finished today
+        currentDay = 0
+        currentDayEndingTime = 1440 * (day_index + 1)
+        for j in range(len(paras['job_data'])):
+            floatted_stage = None
             for t in paras['allTasks']:
+                myValue = start_job.get((j,t), None)
+
+                if myValue is None: continue
+                if solver.Value(myValue)>= currentDayEndingTime and t != 2:
+                    # this task needs to perform next day from 8am
+                    paras['floatted_jobs'].append(j)
+                    # remember the floatted stage
+                    if floatted_stage is None:
+                        floatted_stage = t
+                        paras['floatted_job_stage'].append(t)
+
+
                 print(f'{j} {t}')
-                print('start {}, duration {}, end {}'.format(solver.Value(start_job[j][t]), solver.Value(durations[j][t]), solver.Value(end_job[j][t])))
-                start_time = format_time(solver.Value(start_job[j][t]))
-                end_time = format_time(solver.Value(end_job[j][t]))
+                print('start {}, duration {}, end {}'.format(solver.Value(start_job[j, t]), solver.Value(durations[j, t]), solver.Value(end_job[j, t])))
+                start_time = format_time(solver.Value(start_job[j, t]))
+                end_time = format_time(solver.Value(end_job[j, t]))
 
                 formatted_start_time[j, t] = start_time
                 formatted_end_time[j,t] = end_time
-                duration = solver.Value(durations[j][t])
+                duration = solver.Value(durations[j, t])
                 
                 if t not in x_pairs_dict:
-                    x_pairs_dict[t] = [(solver.Value(start_job[j][t]), duration )]
+                    x_pairs_dict[t] = [(solver.Value(start_job[j, t]), duration )]
                 else:
-                    x_pairs_dict[t].append((solver.Value(start_job[j][t]), duration ))
+                    x_pairs_dict[t].append((solver.Value(start_job[j, t]), duration ))
             # covert to decimal duration
             
-            job_duration = (solver.Value(last_end[j]) - solver.Value(first_start[j]))/1440
+            job_duration = (solver.Value(last_end[j]) - paras['ready_time'][j])/1440
 
 
             case_durations.append(job_duration)
 
 
-        for j in paras['allJobs']:
+        for j in range(len(paras['job_data'])):
             print(f'{case_durations[j]}')
 
         print('formmated starting time')
-        for j in paras['allJobs']:
-            for t in paras['allTasks']:
-                print(formatted_start_time[j,t])
+        for key in formatted_start_time:
+                print(formatted_start_time[key])
 
         print('formmated ending time')
-        for j in paras['allJobs']:
-            for t in paras['allTasks']:
-                print(formatted_end_time[j,t])
+        for key in formatted_end_time:
+                print(formatted_end_time[key])
                 
 
         if objective_choice == 'minimise_total_case_duration':
@@ -306,14 +338,17 @@ def lab_model():
         else: print('Optimal')
 
         for stage in paras['allTasks']:
-            x_pairs = x_pairs_dict[stage]
+            myValue = x_pairs_dict.get(stage, None)
 
-            draw.draw_gannt(x_pairs, stage)
+            if myValue is None: continue
+            x_pairs = x_pairs_dict[stage]
+            day_start_times = [ d * 1440 for d in days] + [ (d+1) * 1440]
+            draw.draw_gannt(x_pairs, stage, day_start_times)
 
             intervals = []
             for x in x_pairs:
                 intervals.append(pd.Interval(x[0], x[0] + x[1]))
-            print('intevals are', intervals)
+            #print('intevals are', intervals)
             ovrelapped_flag = False
             for idx, a in enumerate(intervals):
                 for idx1, b in enumerate(intervals):
@@ -322,9 +357,34 @@ def lab_model():
                         ovrelapped_flag = True
             print('is there overlap ', ovrelapped_flag)
 
+        print('floatted jobs {}'.format(paras['floatted_jobs']))
+        print('floatted stage {}'.format(paras['floatted_job_stage']))
 
-        
+        # now crated floatted jobs
+        floatted_job_ops_duration = []
+        floatted_job_ready_time = []
+        floatted_job_start_stage = []
+        floatted_job_category = []
+        for idx, job in enumerate(paras['floatted_jobs']):
+            floatted_job_ops_duration.append(paras['job_data'][job])
+            floatted_job_ready_time.append(currentDayEndingTime + 480) # ready next day 8am
+            floatted_job_start_stage.append(paras['floatted_job_stage'][idx])
+            floatted_job_category.append(paras['category'][job])
+            
+        paras['job_data'] = floatted_job_ops_duration
+        paras['ready_time'] = floatted_job_ready_time
+        paras['stage'] = floatted_job_start_stage
+        paras['category'] = floatted_job_category
+
+        print('new job data {}'.format(paras['job_data'] ))
+        print('new ready_time {}'.format(paras['ready_time']))
+        print('new stage {}'.format(paras['stage']))
+        print('new category {}'.format(paras['category']))
+
 
 read_data()
 lab_model()
 format_time()
+
+# call label model again
+lab_model(1)
