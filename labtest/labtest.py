@@ -11,22 +11,26 @@ paras = {
     'job_data':[], # contains processing time for each stage
     'category': [],# 0 means it can be at 12-2pm or 6pm-3am batch, 1 means it only be at 6pm-3pm batch, processing time is 2 hour or 9 hours
     'ready_time': [],
-    'days': 2, # planning for 3 days
+    'days': 3, # planning for 3 days
     'start':8, # start time for stage 0, 1, 3 every day, 8am
     'end': 18, # end time for stage 0,1,3 every day 6pm
     'start_2': [12 * 60, 18 * 60], # start time for category 0 and 1 at stage 2, 12pm, and 6 pm
     'duration_2': [2 *60 , 9 * 60], # duration for category 0 and 1 at stage 2 in minutes
     'max_jobs': 10,
     'max_serach_time_sec': 30,
-    'capacity':[1, 2, 1000, 2], # how many samples can be anaylsed at the same time for each stage
+    'capacity':[5, 10, 1000, 15], # how many samples can be anaylsed at the same time for each stage
     'stage':[], # the job starting tage for this scheduling period, it can be floatted from previous planning period, only add intervals for the reamining stages
     'floatted_jobs':[],  # floatted job index
-    'floatted_job_stage' : [] # floatted job next stage this will not be any stage 2 job
+    'number_floatted': 0,
+    'floatted_job_stage' : [], # floatted job next stage this will not be any stage 2 job
+    'job_weight': [] # make floatted job has more weights so they finish as soon as possible
+
 }
 
 def clean_data():
     paras['floatted_jobs'] = []
     paras['floatted_job_stage'] = []
+
 
 
 def format_time(n = 15):
@@ -47,7 +51,7 @@ def format_time(n = 15):
 
 def process_data(row):
 
-    if len(paras['job_data']) >= paras['max_jobs']: return
+    if len(paras['job_data']) - paras['number_floatted'] >= paras['max_jobs']: return
     data = [row['stage_0'], row['stage_1'], row['stage_2'], row['stage_3']] # processing time in minutes at every stage escept stage 2, fixed time
 
     #
@@ -59,25 +63,29 @@ def process_data(row):
     paras['ready_time'].append(row['ready_time_mins']) # base time is 2022/01/01 12:00 am
     #paras['ready_time'].append(0)
 
-    paras['stage'].append(row.stage)
+    #paras['stage'].append(row.stage)
+    paras['stage'].append(0)
+    
+    paras['job_weight'].append(1)
 
 
     return
 
+def load_data():
+    df = pd.read_csv('100-jobs.csv')
+    paras['df'] = df
 
-def read_data():
-
-    df = pd.read_csv ('400-jobs.csv')
+def read_data(day_index = 0):
+    df = paras['df']
+    df = df[(df['ready_time_mins'] >= 1440* day_index) & (df['ready_time_mins'] < 1440 * (day_index + 1))]
     print(df.head)
     df.apply(process_data, axis = 1)
-    print(paras['job_data'])
-    print(paras['stage'])
+
+    # how to read data for a certain time range
 
     numTasks = 4
     allTasks = range(numTasks)
     print(len(paras['job_data']), len(paras['ready_time']))
-    paras['nbJobs'] = len(paras['job_data'])
-    paras['allJobs'] = range(len(paras['job_data']))
     paras['numTasks'] = numTasks
     paras['allTasks'] = allTasks
 
@@ -228,8 +236,7 @@ def lab_model(day_index = 0):
     # here the machine capacity 1 means for each machine, it can only perform one job at the same time
     # for stage 2, we have 1000 machines
     capacity = paras['capacity']
-    for stage in paras['allTasks']:
-        if stage < paras['stage'][j]: continue
+    for stage in stage_tasks:
         # capacity is 1, means no tasks at the same stage can overlap
         # capacity is 2, means two tasks can overlap, as we have two machines
         # stage 2 has 1000 machines, ha
@@ -237,10 +244,10 @@ def lab_model(day_index = 0):
 
     # lets start with object to be makespan
 
-    print(f'starts {start_job}')
-    print(f'ends {end_job}')
-    print(f'durations { durations}')
-    print(f'stage tasks {stage_tasks}')
+    #print(f'starts {start_job}')
+    #print(f'ends {end_job}')
+    #print(f'durations { durations}')
+    #print(f'stage tasks {stage_tasks}')
 
     # Makespan objective.
     #objective_choice = 'minimise_max_end_time'
@@ -252,7 +259,8 @@ def lab_model(day_index = 0):
         model.Minimize(obj_var)
     # try minimise total in system time
     if objective_choice == 'minimise_total_case_duration':
-        model.Minimize(sum(last_end[i] - paras['ready_time'][i] for i in range(len(paras['job_data']))))
+        # wieghted duration - floated job has more weights
+        model.Minimize(sum((last_end[i] - paras['ready_time'][i]) * paras['job_weight'][i] for i in range(len(paras['job_data']))))
         #model.Minimize(sum(last_end[i]  for i in paras['allJobs']))
     # try minimise max in system time
     if objective_choice == 'minimise_max_case_duration':
@@ -260,7 +268,7 @@ def lab_model(day_index = 0):
         for j in range(len(paras['job_data'])):
             suffix = 'in_system_{j}'
             in_system_var = model.NewIntVar(0, horizon, suffix)
-            model.Add(in_system_var == last_end[j] - paras['ready_time'][j])
+            model.Add(in_system_var ==  paras['job_weight'][j]*(last_end[j] - paras['ready_time'][j]))
             in_systems.append(in_system_var)
 
         in_system_obj = model.NewIntVar(0, horizon, 'in_system')
@@ -315,7 +323,7 @@ def lab_model(day_index = 0):
             
             job_duration = (solver.Value(last_end[j]) - paras['ready_time'][j])/1440
 
-
+            # todo case duration is not correct in this veroion
             case_durations.append(job_duration)
 
 
@@ -330,7 +338,7 @@ def lab_model(day_index = 0):
         for key in formatted_end_time:
                 print(formatted_end_time[key])
                 
-
+        # todo average case duration is not correct in this floatted version
         if objective_choice == 'minimise_total_case_duration':
             print('average duration {}'.format(solver.ObjectiveValue() / 1440 / paras['max_jobs']))
         else: print('max in_system duration =', solver.ObjectiveValue() / 1440)
@@ -342,8 +350,8 @@ def lab_model(day_index = 0):
 
             if myValue is None: continue
             x_pairs = x_pairs_dict[stage]
-            day_start_times = [ d * 1440 for d in days] + [ (d+1) * 1440]
-            draw.draw_gannt(x_pairs, stage, day_start_times)
+            day_start_times = [ (d + day_index) * 1440 for d in days] + [ (d+1 + day_index) * 1440]
+            draw.draw_gannt(x_pairs, stage, day_start_times, day_index)
 
             intervals = []
             for x in x_pairs:
@@ -375,16 +383,22 @@ def lab_model(day_index = 0):
         paras['ready_time'] = floatted_job_ready_time
         paras['stage'] = floatted_job_start_stage
         paras['category'] = floatted_job_category
+        paras['job_weight'] = [2] * len(floatted_job_category)
+        paras['number_floatted'] = len(floatted_job_category)
 
         print('new job data {}'.format(paras['job_data'] ))
         print('new ready_time {}'.format(paras['ready_time']))
         print('new stage {}'.format(paras['stage']))
         print('new category {}'.format(paras['category']))
+        print('job_weight {}'.format(paras['job_weight']))
+        print('floatted num of jobs', len(floatted_job_category))
+        
 
-
+load_data()
 read_data()
 lab_model()
 format_time()
 
 # call label model again
+read_data(1)
 lab_model(1)
