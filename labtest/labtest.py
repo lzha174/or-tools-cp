@@ -5,10 +5,13 @@ from ortools.sat.python import cp_model
 from drawing import draw
 
 import pandas as pd
+import openpyxl
 from datetime import datetime
 from datetime import timedelta
 paras = {
+    'result': [], # finished job performance on every day, key is day index, value is dataframe array
     'job_data':[], # contains processing time for each stage
+    'job_index': [],
     'category': [],# 0 means it can be at 12-2pm or 6pm-3am batch, 1 means it only be at 6pm-3pm batch, processing time is 2 hour or 9 hours
     'ready_time': [],
     'days': 3, # planning for 3 days
@@ -16,9 +19,9 @@ paras = {
     'end': 18, # end time for stage 0,1,3 every day 6pm
     'start_2': [12 * 60, 18 * 60], # start time for category 0 and 1 at stage 2, 12pm, and 6 pm
     'duration_2': [2 *60 , 9 * 60], # duration for category 0 and 1 at stage 2 in minutes
-    'max_jobs': 400,
+    'max_jobs': 500,
     'max_serach_time_sec': 30,
-    'capacity':[5, 10, 1000, 15], # how many samples can be anaylsed at the same time for each stage
+    'capacity':[10, 10, 1000, 15], # how many samples can be anaylsed at the same time for each stage
     'stage':[], # the job starting tage for this scheduling period, it can be floatted from previous planning period, only add intervals for the reamining stages
     'floatted_jobs':[],  # floatted job index
     'number_floatted': 0,
@@ -44,7 +47,7 @@ def format_time(n = 15):
     final_time = given_time + timedelta(minutes=n)
     #print('Final Time (15 minutes after given time ): ', final_time)
     # Convert datetime object to string in specific format
-    final_time_str = final_time.strftime('%m/%d/%Y %H:%M:%S.%f')
+    final_time_str = final_time.strftime('%m/%d/%Y %H:%M:%S')
     #print('Final Time as string object: ', final_time_str)
     return  final_time_str
 
@@ -52,8 +55,10 @@ def format_time(n = 15):
 def process_data(row):
 
     if len(paras['job_data']) - paras['number_floatted'] >= paras['max_jobs']: return
-    data = [row['stage_0'], row['stage_1'], row['stage_2'], row['stage_3']] # processing time in minutes at every stage escept stage 2, fixed time
 
+    data = [row['stage_0'], row['stage_1'], row['stage_2'], row['stage_3']] # processing time in minutes at every stage escept stage 2, fixed time
+    # this is the orignial row index in the whole df
+    paras['job_index'].append(row.name)
     #
     paras['job_data'].append(data)
 
@@ -72,7 +77,7 @@ def process_data(row):
     return
 
 def load_data():
-    df = pd.read_csv('600-jobs.csv')
+    df = pd.read_csv('1500-jobs.csv')
     paras['df'] = df
 
 def read_data(day_index = 0):
@@ -137,11 +142,11 @@ def lab_model(day_index = 0):
         #durations[j] = []
 
         previous_end = None
-        print('j=', j)
+        #print('j=', j)
         for stage in paras['allTasks']:
             # only process reamining tasks
             if stage < paras['stage'][j]: continue
-            print('stage = ', stage)
+            #print('stage = ', stage)
             suffix = f'job {j} task {stage}'
 
             start = model.NewIntVar(starts_time[0], horizon, 'start ' + suffix)
@@ -282,42 +287,63 @@ def lab_model(day_index = 0):
     print(status, cp_model.INFEASIBLE, cp_model.FEASIBLE)
     # Print solution.
     if status == cp_model.FEASIBLE or status == cp_model.OPTIMAL:
+
+        #need to output all start and end time for each job at each stage
+
+
+
+
+
         print(status)
         case_durations = []
         formatted_start_time = {} # indexed by job id and task id
         formatted_end_time = {}
+        formatted_durations = {}
         x_pairs_dict = {} # indexed by stage id store (start_time, duration) for all jobs
 
 
         # get all jobs that not finished today
         currentDay = 0
         currentDayEndingTime = 1440 * (day_index + 1)
-        for j in range(len(paras['job_data'])):
-            floatted_stage = None
-            for t in paras['allTasks']:
-                myValue = start_job.get((j,t), None)
 
-                if myValue is None: continue
+        # I want to store unifinished jobs based on day index, only deal with jobs that not finished tmr for next day planning
+        unfinished_jobs = {} # key = day, arrays of first unfinished stage
+        task_type = collections.namedtuple('task', 'j_id j_index stage opsDuration category')
+        for j in range(len(paras['job_data'])):
+            floatted_flag = None
+            for t in paras['allTasks']:
+                start = start_job.get((j,t), None)
+
+                if start is None: continue
                 # if stage is 1 next day, this iis the floatted stge, if stage is 2 at noon next day, what now?
                 # how to get floatted job? if this job is not finished today, what is finished?
                 # start of any task of this job is after today
-                if (t <=1 or t>=3) and solver.Value(myValue)>= currentDayEndingTime:
-                    # this task needs to perform next day from 8am
-                    paras['floatted_jobs'].append(j)
-                    # remember the floatted stage
-                    if floatted_stage is None:
-                        floatted_stage = t
-                        paras['floatted_job_stage'].append(t)
+                if (t <=1 or t>=3) and solver.Value(start)>= starts_time[1] and floatted_flag is None:
+
+                    # get day index store first unfinisheed stage based on day
+                    floatted_day = solver.Value(start) // 1440
+                    if floatted_day not in unfinished_jobs:
+                        unfinished_jobs[floatted_day] = [task_type(j_id= j, j_index=paras['job_index'][j],
+                                                                   stage=t, opsDuration=paras['job_data'][j], category=paras['category'][j])]
+                    else:
+                        unfinished_jobs[floatted_day].append(task_type(j_id= j, j_index=paras['job_index'][j],
+                                                                       stage=t, opsDuration=paras['job_data'][j], category=paras['category'][j]))
 
 
-                print(f'{j} {t}')
-                print('start {}, duration {}, end {}'.format(solver.Value(start_job[j, t]), solver.Value(durations[j, t]), solver.Value(end_job[j, t])))
+                    floatted_flag = j
+                    #print(f'adding job {j} at stage {t} with floattd_stage {floatted_stage}')
+
+
+
+                #print(f'{j} {t}')
+                #print('start {}, duration {}, end {}'.format(solver.Value(start_job[j, t]), solver.Value(durations[j, t]), solver.Value(end_job[j, t])))
                 start_time = format_time(solver.Value(start_job[j, t]))
                 end_time = format_time(solver.Value(end_job[j, t]))
 
                 formatted_start_time[j, t] = start_time
                 formatted_end_time[j,t] = end_time
                 duration = solver.Value(durations[j, t])
+                formatted_durations[j,t] = duration
                 
                 if t not in x_pairs_dict:
                     x_pairs_dict[t] = [(solver.Value(start_job[j, t]), duration )]
@@ -330,17 +356,61 @@ def lab_model(day_index = 0):
             # todo case duration is not correct in this veroion
             case_durations.append(job_duration)
 
+        for key in unfinished_jobs:
+            print(f'day {key} unfinished {unfinished_jobs[key]}')
 
+        all_results = [] # each row - job id, stage , start, end duration
         for j in range(len(paras['job_data'])):
-            print(f'{case_durations[j]}')
 
-        print('formmated starting time')
-        for key in formatted_start_time:
-                print(formatted_start_time[key])
+            for t in paras['allTasks']:
+                start = formatted_start_time.get((j,t), None)
+                if start is None: continue
 
-        print('formmated ending time')
-        for key in formatted_end_time:
-                print(formatted_end_time[key])
+                # store job task info finished before 6pm for except stage 2, and mid nite
+
+                job_data = ['job_{i}'.format(i=paras['job_index'][j])]
+                end = formatted_end_time.get((j,t), None)
+
+                if ((t <=1 or t>=3) and solver.Value(end_job[j, t]) <= ends_time[0]) \
+                        or (t==2 and solver.Value(end_job[j,t]) <= currentDayEndingTime + 480):
+                    duration = formatted_durations.get((j,t), None)
+                    job_data = job_data + [t, start, end, duration]
+                    all_results.append(job_data)
+        # this is useful to calculate performace
+        df = pd.DataFrame(all_results, columns=['job', 'stage', 'start', 'end', 'duration'])
+        df[["start", "end"]] = df[["start", "end"]].apply(pd.to_datetime)
+        print(df.head)
+        print(df.info())
+
+        paras['result'].append(df)
+        
+        
+        # I want to know all jobs start at least next day
+        time_filter_tmr = format_time((day_index + 1) * 1440 + 480)
+        time_ending_tmr = format_time((day_index + 1) * 1440 + 18*60)
+        tmr_floatted = df[(df['start'] >= time_filter_tmr) & (df['end'] < time_ending_tmr)]
+
+        #fisrt_staged_float = tmr_floatted[ tmr_floatted['start'] = )
+        print(tmr_floatted.info())
+        print('max start', df['start'].max())
+
+        # lost track of what to do...want to store all jobs?
+        # what do to ? what to do?
+
+        
+
+        # now what,...these jobs
+
+        #for j in range(len(paras['job_data'])):
+        #    print(f'{case_durations[j]}')
+
+        #print('formmated starting time')
+        #for key in formatted_start_time:
+        #        print(formatted_start_time[key])
+
+        #print('formmated ending time')
+        #for key in formatted_end_time:
+        #        print(formatted_end_time[key])
                 
         # todo average case duration is not correct in this floatted version
         if objective_choice == 'minimise_total_case_duration':
@@ -350,9 +420,9 @@ def lab_model(day_index = 0):
         else: print('Optimal')
 
         for stage in paras['allTasks']:
-            myValue = x_pairs_dict.get(stage, None)
+            start = x_pairs_dict.get(stage, None)
 
-            if myValue is None: continue
+            if start is None: continue
             x_pairs = x_pairs_dict[stage]
             day_start_times = [ (d + day_index) * 1440 for d in days] + [ (d+1 + day_index) * 1440]
             draw.draw_gannt(x_pairs, stage, day_start_times, day_index)
@@ -367,21 +437,23 @@ def lab_model(day_index = 0):
                     if idx1 <= idx: continue
                     if (a.overlaps(b)):
                         ovrelapped_flag = True
-            print('is there overlap ', ovrelapped_flag)
-
-        print('floatted jobs {}'.format(paras['floatted_jobs']))
-        print('floatted stage {}'.format(paras['floatted_job_stage']))
-
+            #print('is there overlap ', ovrelapped_flag)
         # now crated floatted jobs
         floatted_job_ops_duration = []
         floatted_job_ready_time = []
         floatted_job_start_stage = []
         floatted_job_category = []
-        for idx, job in enumerate(paras['floatted_jobs']):
-            floatted_job_ops_duration.append(paras['job_data'][job])
+
+        key = day_index + 1
+
+        floatted_jobs = unfinished_jobs.get(key, [])
+
+        for job in floatted_jobs:
+            floatted_job_ops_duration.append(job.opsDuration)
             floatted_job_ready_time.append(currentDayEndingTime + 480) # ready next day 8am
-            floatted_job_start_stage.append(paras['floatted_job_stage'][idx])
-            floatted_job_category.append(paras['category'][job])
+            floatted_job_start_stage.append(job.stage)
+            floatted_job_category.append(job.category)
+
             
         paras['job_data'] = floatted_job_ops_duration
         paras['ready_time'] = floatted_job_ready_time
@@ -400,13 +472,11 @@ def lab_model(day_index = 0):
 
 load_data()
 
-read_data()
-lab_model()
 
-read_data(1)
-lab_model(1)
+for day in range(0,4):
+    read_data(day)
+    lab_model(day)
 
-# call label model again
-read_data(2)
-lab_model(2)
+df = pd.concat(paras['result'])
+df.to_csv('out.csv', index=False)
 
