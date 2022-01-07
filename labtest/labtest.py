@@ -8,6 +8,11 @@ import pandas as pd
 import openpyxl
 from datetime import datetime
 from datetime import timedelta
+
+# now change to
+seconds_per_hour = 60 * 60
+day_in_seconds = 24 * 60 * 60
+
 paras = {
     'result': [], # finished job performance on every day, key is day index, value is dataframe array
     'job_data':[], # contains processing time for each stage
@@ -17,9 +22,9 @@ paras = {
     'days': 3, # planning for 3 days
     'start':8, # start time for stage 0, 1, 3 every day, 8am
     'end': 18, # end time for stage 0,1,3 every day 6pm
-    'start_2': [12 * 60, 18 * 60], # start time for category 0 and 1 at stage 2, 12pm, and 6 pm
-    'duration_2': [2 *60 , 9 * 60], # duration for category 0 and 1 at stage 2 in minutes
-    'max_jobs': 500,
+    'start_2': [12 * seconds_per_hour, 18 * seconds_per_hour], # start time for category 0 and 1 at stage 2, 12pm, and 6 pm
+    'duration_2': [2 * seconds_per_hour , 9 * seconds_per_hour], # duration for category 0 and 1 at stage 2 in minutes
+    'max_jobs': 2,
     'max_serach_time_sec': 30,
     'capacity':[10, 10, 1000, 15], # how many samples can be anaylsed at the same time for each stage
     'stage':[], # the job starting tage for this scheduling period, it can be floatted from previous planning period, only add intervals for the reamining stages
@@ -34,6 +39,26 @@ def clean_data():
     paras['floatted_jobs'] = []
     paras['floatted_job_stage'] = []
 
+def load_real_date():
+    df = pd.read_csv('3-day.csv')
+    df['start_timestamp'] = pd.to_datetime(df['start_timestamp'], format='%Y-%m-%d %H:%M:%S')
+    df['end_timestamp'] = pd.to_datetime(df['end_timestamp'], format='%Y-%m-%d %H:%M:%S')
+    df['work_ready_timestamp'] = pd.to_datetime(df['work_ready_timestamp'], format='%Y-%m-%d %H:%M:%S')
+    # https://www.kite.com/python/answers/how-to-find-the-number-of-seconds-between-two-datetime-objects-in-python
+
+    past_date = pd.to_datetime('17/05/2021 00:00')
+
+    df['duration'] = df['end_timestamp'] - df["start_timestamp"]
+
+    df['ready_time_sec'] = df['work_ready_timestamp'].apply(lambda x: (x - past_date).total_seconds())
+
+    df['duration_sec'] = df['duration'].apply(lambda x: x.total_seconds())
+    print(df['start_timestamp'])
+    print(df['duration_sec'])
+    print(df['ready_time_sec'])
+    
+    print(df.info())
+
 
 
 def format_time(n = 15):
@@ -44,7 +69,7 @@ def format_time(n = 15):
     given_time = datetime.strptime(time_str, date_format_str)
     #print('Given timestamp: ', given_time)
     # Add 15 minutes to datetime object
-    final_time = given_time + timedelta(minutes=n)
+    final_time = given_time + timedelta(seconds=n)
     #print('Final Time (15 minutes after given time ): ', final_time)
     # Convert datetime object to string in specific format
     final_time_str = final_time.strftime('%m/%d/%Y %H:%M:%S')
@@ -56,7 +81,9 @@ def process_data(row):
 
     if len(paras['job_data']) - paras['number_floatted'] >= paras['max_jobs']: return
 
-    data = [row['stage_0'], row['stage_1'], row['stage_2'], row['stage_3']] # processing time in minutes at every stage escept stage 2, fixed time
+    data = [row['stage_0'] * 60, row['stage_1'] * 60, row['stage_2'] * 60, row['stage_3'] * 60]  # processing time in minutes at every stage escept stage 2, fixed time
+
+
     # this is the orignial row index in the whole df
     paras['job_index'].append(row.name)
     #
@@ -65,7 +92,7 @@ def process_data(row):
     paras['category'].append(row['category'])
     #paras['category'].append(0)
 
-    paras['ready_time'].append(row['ready_time_mins']) # base time is 2022/01/01 12:00 am
+    paras['ready_time'].append(row['ready_time_secs']) # base time is 2022/01/01 12:00 am
     #paras['ready_time'].append(0)
 
     paras['stage'].append(row.stage)
@@ -77,12 +104,12 @@ def process_data(row):
     return
 
 def load_data():
-    df = pd.read_csv('1500-jobs.csv')
+    df = pd.read_csv('1500-secs.csv')
     paras['df'] = df
 
 def read_data(day_index = 0):
     df = paras['df']
-    df = df[(df['ready_time_mins'] >= 1440* day_index) & (df['ready_time_mins'] < 1440 * (day_index + 1))]
+    df = df[(df['ready_time_secs'] >= day_in_seconds* day_index) & (df['ready_time_secs'] < day_in_seconds * (day_index + 1))]
     print(df.head)
     df.apply(process_data, axis = 1)
 
@@ -104,7 +131,8 @@ def lab_model(day_index = 0):
     # define starting time, ending time in mins for 3 days
 
     OpsDuration = paras['job_data']
-    maxDuration = 550
+    print('duration is ', OpsDuration)
+    maxDuration = 9 * seconds_per_hour
 
     category = paras['category']
     two_hour_idx = 0
@@ -114,8 +142,8 @@ def lab_model(day_index = 0):
     starts_time = []
     ends_time = []
     for d in days:
-        start = 8  * 60 + (day_index + d) * 24 * 60
-        end = 18 * 60 + (day_index + d) * 24 * 60
+        start = 8 * seconds_per_hour + (day_index + d) * day_in_seconds
+        end = 18 * seconds_per_hour + (day_index + d) * day_in_seconds
         starts_time.append(start)
         ends_time.append(end)
     print(f'starting times are {starts_time}')
@@ -196,7 +224,7 @@ def lab_model(day_index = 0):
                     # cannot start evening batch after the last day midnite
                     if d == paras['days'] - 1: continue
                     # if this task start at day d, make sure it start at 12pm
-                    start_time_evening = paras['start_2'][six_hour_idx] + (d + day_index) * 24 * 60
+                    start_time_evening = paras['start_2'][six_hour_idx] + (d + day_index) * day_in_seconds
                     l_stage_2_evening_task_start = model.NewBoolVar('stage 2 evening in {} {}'.format(d, suffix))
                     model.Add(start == start_time_evening).OnlyEnforceIf(
                         [l_stage_2_evening_task_start, l_lunch_batch.Not()])
@@ -213,7 +241,7 @@ def lab_model(day_index = 0):
                     l_stage_2_lunch_start = []
                     for d in days:
                         # if this task start at day d, make sure it start at 12pm
-                        start_time_lunch = paras['start_2'][two_hour_idx] + (d + day_index) * 24 * 60
+                        start_time_lunch = paras['start_2'][two_hour_idx] + (d + day_index) * day_in_seconds
                         l_stage_2_lunch_task_start = model.NewBoolVar('stage 2 lunch in {} {}'.format(d, suffix))
                         model.Add(start == start_time_lunch ).OnlyEnforceIf([l_stage_2_lunch_task_start, l_lunch_batch])
                         l_stage_2_lunch_start.append(l_stage_2_lunch_task_start)
@@ -304,7 +332,7 @@ def lab_model(day_index = 0):
 
         # get all jobs that not finished today
         currentDay = 0
-        currentDayEndingTime = 1440 * (day_index + 1)
+        currentDayEndingTime = day_in_seconds * (day_index + 1)
 
         # I want to store unifinished jobs based on day index, only deal with jobs that not finished tmr for next day planning
         unfinished_jobs = {} # key = day, arrays of first unfinished stage
@@ -321,7 +349,7 @@ def lab_model(day_index = 0):
                 if (t <=1 or t>=3) and solver.Value(start)>= starts_time[1] and floatted_flag is None:
 
                     # get day index store first unfinisheed stage based on day
-                    floatted_day = solver.Value(start) // 1440
+                    floatted_day = solver.Value(start) // day_in_seconds
                     if floatted_day not in unfinished_jobs:
                         unfinished_jobs[floatted_day] = [task_type(j_id= j, j_index=paras['job_index'][j],
                                                                    stage=t, opsDuration=paras['job_data'][j], category=paras['category'][j])]
@@ -336,7 +364,7 @@ def lab_model(day_index = 0):
 
 
                 #print(f'{j} {t}')
-                #print('start {}, duration {}, end {}'.format(solver.Value(start_job[j, t]), solver.Value(durations[j, t]), solver.Value(end_job[j, t])))
+                print('start {}, duration {}, end {}'.format(solver.Value(start_job[j, t]), solver.Value(durations[j, t]), solver.Value(end_job[j, t])))
                 start_time = format_time(solver.Value(start_job[j, t]))
                 end_time = format_time(solver.Value(end_job[j, t]))
 
@@ -351,7 +379,7 @@ def lab_model(day_index = 0):
                     x_pairs_dict[t].append((solver.Value(start_job[j, t]), duration ))
             # covert to decimal duration
             
-            job_duration = (solver.Value(last_end[j]) - paras['ready_time'][j])/1440
+            job_duration = (solver.Value(last_end[j]) - paras['ready_time'][j])/day_in_seconds
 
             # todo case duration is not correct in this veroion
             case_durations.append(job_duration)
@@ -372,7 +400,7 @@ def lab_model(day_index = 0):
                 end = formatted_end_time.get((j,t), None)
 
                 if ((t <=1 or t>=3) and solver.Value(end_job[j, t]) <= ends_time[0]) \
-                        or (t==2 and solver.Value(end_job[j,t]) <= currentDayEndingTime + 480):
+                        or (t==2 and solver.Value(end_job[j,t]) <= currentDayEndingTime + 8 * seconds_per_hour):
                     duration = formatted_durations.get((j,t), None)
                     job_data = job_data + [t, start, end, duration]
                     all_results.append(job_data)
@@ -386,8 +414,8 @@ def lab_model(day_index = 0):
         
         
         # I want to know all jobs start at least next day
-        time_filter_tmr = format_time((day_index + 1) * 1440 + 480)
-        time_ending_tmr = format_time((day_index + 1) * 1440 + 18*60)
+        time_filter_tmr = format_time((day_index + 1) * day_in_seconds + 8 * seconds_per_hour)
+        time_ending_tmr = format_time((day_index + 1) * day_in_seconds + 18* seconds_per_hour)
         tmr_floatted = df[(df['start'] >= time_filter_tmr) & (df['end'] < time_ending_tmr)]
 
         #fisrt_staged_float = tmr_floatted[ tmr_floatted['start'] = )
@@ -414,8 +442,8 @@ def lab_model(day_index = 0):
                 
         # todo average case duration is not correct in this floatted version
         if objective_choice == 'minimise_total_case_duration':
-            print('average duration {}'.format(solver.ObjectiveValue() / 1440 / paras['max_jobs']))
-        else: print('max in_system duration =', solver.ObjectiveValue() / 1440)
+            print('average duration {}'.format(solver.ObjectiveValue() / day_in_seconds / paras['max_jobs']))
+        else: print('max in_system duration =', solver.ObjectiveValue() / day_in_seconds)
         if status == cp_model.FEASIBLE: print('Fesible')
         else: print('Optimal')
 
@@ -424,8 +452,8 @@ def lab_model(day_index = 0):
 
             if start is None: continue
             x_pairs = x_pairs_dict[stage]
-            day_start_times = [ (d + day_index) * 1440 for d in days] + [ (d+1 + day_index) * 1440]
-            draw.draw_gannt(x_pairs, stage, day_start_times, day_index)
+            day_start_times = [ (d + day_index) * day_in_seconds for d in days] + [ (d+1 + day_index) * day_in_seconds]
+            #draw.draw_gannt(x_pairs, stage, day_start_times, day_index)
 
             intervals = []
             for x in x_pairs:
@@ -450,7 +478,7 @@ def lab_model(day_index = 0):
 
         for job in floatted_jobs:
             floatted_job_ops_duration.append(job.opsDuration)
-            floatted_job_ready_time.append(currentDayEndingTime + 480) # ready next day 8am
+            floatted_job_ready_time.append(currentDayEndingTime + 8 * seconds_per_hour) # ready next day 8am
             floatted_job_start_stage.append(job.stage)
             floatted_job_category.append(job.category)
 
@@ -470,13 +498,13 @@ def lab_model(day_index = 0):
         print('floatted num of jobs', len(floatted_job_category))
         
 
-load_data()
+load_real_date()
 
 
-for day in range(0,4):
+for day in range(0,0):
     read_data(day)
     lab_model(day)
 
-df = pd.concat(paras['result'])
-df.to_csv('out.csv', index=False)
+#df = pd.concat(paras['result'])
+#df.to_csv('out.csv', index=False)
 
