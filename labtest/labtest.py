@@ -39,6 +39,10 @@ def clean_data():
     paras['floatted_jobs'] = []
     paras['floatted_job_stage'] = []
 
+def check(row):
+    if row['client'] == "Grossing" and row['case_stage_rank'] != 2:
+        print (row.case_key)
+
 def load_real_date():
     df = pd.read_csv('3-day.csv')
     df['start_timestamp'] = pd.to_datetime(df['start_timestamp'], format='%Y-%m-%d %H:%M:%S')
@@ -59,7 +63,13 @@ def load_real_date():
     
     print(df.info())
 
+    temp1 = df[df.client == "Grossing"]
 
+    temp2 = df[df.case_stage_rank==2]
+    print(temp1.info())
+    print(temp2.info())
+
+    df.apply(check, axis = 1)
 
 def format_time(n = 15):
     # Given timestamp in string
