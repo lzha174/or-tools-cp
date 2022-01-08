@@ -3,6 +3,11 @@ from random import randint
 import numpy as np
 import random
 
+import sys
+sys.path.insert(1, '/Users/mac/Documents/GitHub/or-tools-cp/labtest')
+
+import commonstr
+
 def draw_step(x = [], y = []):
     plt.title('plt.step(where=...)')
     plt.step(x, y, label='pre (default)')
@@ -16,7 +21,7 @@ def draw_gannt(x_pairs, stage = 0, starting_times = [], day_index = 0):
     fig, ax = plt.subplots()
     startY = 10
 
-    minX = 1e5
+    minX = 1e15
     maxX = -1
     for j in x_pairs:
         #https://matplotlib.org/stable/api/_as_gen/matplotlib.axes.Axes.broken_barh.html#matplotlib.axes.Axes.broken_barh
@@ -32,7 +37,7 @@ def draw_gannt(x_pairs, stage = 0, starting_times = [], day_index = 0):
         start = f'{j[0]}'
         value = f'{j[1]}'
         #ax.text(x=j[0] -200 , y=startY, s=start)
-        #ax.text(x=j[0] + j[1], y=startY, s= value)
+        ax.text(x=j[0] + j[1], y=startY, s= value)
         startY += 20
 
     ax.set_title(f'Tasks at stage {stage} from {day_index}')
@@ -41,7 +46,7 @@ def draw_gannt(x_pairs, stage = 0, starting_times = [], day_index = 0):
     ax.set_xlabel('mintues since start')
 
     idx = np.asarray(starting_times)
-    days_tick = [f'day {starting_times[i] // 1440}' for i in range(len(starting_times))]
+    days_tick = [f'day {starting_times[i] // commonstr.day_in_seconds }' for i in range(len(starting_times))]
     ax.set_xticks(idx)
     ax.set_xticklabels(days_tick, rotation=65)
 

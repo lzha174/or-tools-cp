@@ -3,7 +3,7 @@ from ortools.sat.python import cp_model
 from commonstr import *
 import collections
 import pandas as pd
-
+from drawing import draw
 def lab_model(paras, job_data, day_index=0):
     # every job has 4 tasks, third task is processed in batch, capacity is 1000
     # every task of job start time and end time for stage 0, 1, 3 must fall in the normal working hours 8am - 6 pm  every day
@@ -46,10 +46,10 @@ def lab_model(paras, job_data, day_index=0):
     jobs = {}  # intervals index by job_id, task id
     # this needs to be chagnes
     stage_tasks = {}  # indexed by stage id
-    first_start = []
-    last_end = []
+    first_start = {}
+    last_end = {}
 
-    ready_times = []
+    ready_times = {}
     for case, tasks in job_data.items():
         previous_end = None
         j = case
@@ -74,13 +74,13 @@ def lab_model(paras, job_data, day_index=0):
             # first task start time >= ready time
             if idx == 0:
                 model.Add(start >= ready_time)
-                first_start.append(start)
+                first_start[j] = start
                 # remember the initial ready time
-                ready_times.append(ready_time)
+                ready_times[j] = ready_time
 
             # get last end of this job
             if idx == len(tasks) - 1:
-                last_end.append(end)
+                last_end[j] = end
 
             # Add precedence with previous task in the same job.
             if previous_end is not None:
@@ -179,7 +179,7 @@ def lab_model(paras, job_data, day_index=0):
 
         # wieghted duration - floated job has more weights
         model.Minimize(
-            sum((last_end[i] - ready_times[i]) * paras[job_weights_str][i] for i in range(len(job_data))))
+            sum((last_end[i] - ready_times[i]) * paras[job_weights_str][i] for i in job_data))
         # model.Minimize(sum(last_end[i]  for i in paras['allJobs']))
     # try minimise max in system time
     if objective_choice == 'minimise_max_case_duration':
@@ -238,9 +238,7 @@ def lab_model(paras, job_data, day_index=0):
                         unfinished_jobs[floatted_day].append(unfinished)
                     floatted_flag = j
 
-                print(
-                    'start {}, duration {}, end {}'.format(solver.Value(start_job[j, t]), solver.Value(durations[j, t]),
-                                                           solver.Value(end_job[j, t])))
+
                 start_time = format_time(solver.Value(start_job[j, t]))
                 end_time = format_time(solver.Value(end_job[j, t]))
 
@@ -248,6 +246,10 @@ def lab_model(paras, job_data, day_index=0):
                 formatted_end_time[j, t] = end_time
                 duration = solver.Value(durations[j, t])
                 formatted_durations[j, t] = duration
+                print(f'job {case} task {t}')
+                print(
+                    'start {}, duration {}, end {}'.format(start_time, duration,
+                                                          end_time))
 
                 if t not in x_pairs_dict:
                     x_pairs_dict[t] = [(solver.Value(start_job[j, t]), duration)]
@@ -259,8 +261,8 @@ def lab_model(paras, job_data, day_index=0):
 
                     # todo case duration is not correct in this veroion
                     case_durations.append(job_duration)
-                if floatted_flag is None:
-                    finished_today.append(j)
+            if floatted_flag is None:
+                finished_today.append(j)
 
         for key in unfinished_jobs:
             print(f'day {key} unfinished {unfinished_jobs[key]}')
@@ -311,4 +313,12 @@ def lab_model(paras, job_data, day_index=0):
         key = day_index + 1
 
         floatted_jobs = unfinished_jobs.get(key, [])
+
+        for stage in range(0,5):
+            start = x_pairs_dict.get(stage, None)
+
+            if start is None: continue
+            x_pairs = x_pairs_dict[stage]
+            day_start_times = [ (d + day_index) * day_in_seconds for d in days] + [ (d+1 + day_index) * day_in_seconds]
+            draw.draw_gannt(x_pairs, stage, day_start_times, day_index)
 

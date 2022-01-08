@@ -25,7 +25,7 @@ day_in_seconds = 24 * 60 * 60
 
 def format_time(n = 15):
     # Given timestamp in string
-    time_str = '01/01/2022 00:00:00'
+    time_str = '05/17/2021 00:00:00'
     date_format_str = '%m/%d/%Y %H:%M:%S'
     # create datetime object from timestamp string
     given_time = datetime.strptime(time_str, date_format_str)

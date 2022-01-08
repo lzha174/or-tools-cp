@@ -11,7 +11,7 @@ from commonstr import *
 import openpyxl
 
 
-
+addedjob = 0
 
 task_type = collections.namedtuple('task', 'client_idx priority_idx duration ready_time')
 
@@ -20,7 +20,7 @@ job_data = {}  # key by key_idx, inside need to store tasks in order which may h
 
 paras = {
   max_job_str: 2,
-  'days': 8,
+  'days': 4,
   'start': 8,  # start time for non embedding stage
   'end': 18,  # end time for non embedding stage,  8pm - 5am
   'start_emdbedding': [12 * seconds_per_hour, 20 * seconds_per_hour],
@@ -29,7 +29,7 @@ paras = {
   'max_jobs': 2,
   'max_serach_time_sec': 30,
   'capacity':{0:3, 1: 12,2: 1000, 3: 8, 4:4},
-  job_weights_str: [],
+  job_weights_str: {},
   'result': []
 }
 
@@ -50,7 +50,9 @@ def load_real_data():
   df['end_timestamp'] = pd.to_datetime(df['end_timestamp'], format='%Y-%m-%d %H:%M:%S')
   df['work_ready_timestamp'] = pd.to_datetime(df['work_ready_timestamp'], format='%Y-%m-%d %H:%M:%S')
     # https://www.kite.com/python/answers/how-to-find-the-number-of-seconds-between-two-datetime-objects-in-python
+  print(df.work_ready_timestamp.head(3))
 
+  print(df.head(3))
   past_date = pd.to_datetime('17/05/2021 00:00')
 
   df['duration'] = df['end_timestamp'] - df["start_timestamp"]
@@ -62,6 +64,14 @@ def load_real_data():
   df["case_priority"] = df["case_priority"].astype("category")
 
   df.drop(df[df.duration_sec <1].index, inplace=True)
+
+  tmp = df[df.case_stage_rank == 1]
+  tmp = tmp[tmp.work_ready_timestamp < '2021-05-18 00:00:00'].case_key
+  todayJobs = list(tmp.unique())
+  print(todayJobs)
+  print(f'today jobs {len(todayJobs)}')
+  paras['today'] = todayJobs
+
 
   print(df.groupby(by=['client'])['duration_sec'].describe())
   print(df['duration_sec'].min())
@@ -108,16 +118,22 @@ def load_real_data():
   return df
 
 
-
 def row_process(row):
-
+  global addedjob
+  global job_data
   # let me process one row first
   # for each row, need to put task into a map structure for each case key
 
   # an array of (client idx, duration)
   case_key_idx = paras[name_to_idx_key_str][row.case_key]
 
-  if case_key_idx > paras[max_job_str]: return
+
+  if row.case_key not in paras['today']: return
+
+  #print('name = ', name)
+  if len(job_data) > paras[max_job_str]:
+    del job_data[paras['last_inserted_case']]
+    return
 
   if case_key_idx not in job_data:
     job_data[case_key_idx] = []
@@ -126,13 +142,15 @@ def row_process(row):
   task = task_type(client_idx = client_idx, priority_idx=priority_idx ,duration= int(row.duration_sec), ready_time=int(row.ready_time_sec))
   job_data[case_key_idx].append(task)
   # newly added job has weight of 1
-  paras[job_weights_str].append(1)
+  paras[job_weights_str][case_key_idx] = 1
+  paras['last_inserted_case'] = case_key_idx
 
 
 def read():
   df = load_real_data()
   df.apply(row_process,  axis=1)
-  examine_case(1)
+  for key in job_data:
+    examine_case(key)
   stage = {}
   stage[1,2] = 4
   for key, item in stage.items():
