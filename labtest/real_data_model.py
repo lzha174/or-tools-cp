@@ -11,7 +11,6 @@ from commonstr import *
 import openpyxl
 
 
-addedjob = 0
 
 task_type = collections.namedtuple('task', 'client_idx priority_idx duration ready_time')
 
@@ -19,28 +18,33 @@ job_data = {}  # key by key_idx, inside need to store tasks in order which may h
 
 
 paras = {
-  max_job_str: 2,
+  max_job_str: 162,
   'days': 4,
   'start': 8,  # start time for non embedding stage
-  'end': 18,  # end time for non embedding stage,  8pm - 5am
+  'end': 23,  # end time for non embedding stage,  8pm - 5am
   'start_emdbedding': [12 * seconds_per_hour, 20 * seconds_per_hour],
   # start time for category 0 and 1 at stage 2, 12pm, and 6 pm
   'duration_2': [2 * seconds_per_hour, 9 * seconds_per_hour],  # duration for category 0 and 1 at embedding in seconds
-  'max_jobs': 2,
-  'max_serach_time_sec': 30,
+
+  'max_serach_time_sec': 10,
   'capacity':{0:3, 1: 12,2: 1000, 3: 8, 4:4},
   job_weights_str: {},
-  'result': []
+  'result': [],
+  'full' : False
 }
 
+
+
 def examine_case(case_idx):
+  print (paras[idx_to_name_key_str][case_idx])
   tasks =  job_data[case_idx]
-  for task in tasks:
+  for idx, task in enumerate(tasks):
+    if idx > 0: break
     client = paras[idx_to_name_client_str][task.client_idx]
     priority = paras[idx_to_name_priority_str][task.priority_idx]
     duration = task.duration
-    ready = task.ready_time
-    print(f'client {client} priority {priority} duration {duration} ready {ready}')
+    ready = format_time(task.ready_time)
+    print(f'client {client} priority {priority} duration {duration} ready {ready} ready {task.ready_time}')
 
 
 def load_real_data():
@@ -59,6 +63,9 @@ def load_real_data():
   df['duration_sec'] = df['duration'] / np.timedelta64(1,'s')
 
   df['ready_time_sec'] = df['work_ready_timestamp'].apply(lambda x: (x - past_date).total_seconds())
+
+  f =  df[df.case_key == 'ff65e4c1533550f73c6986d629fad87cbb9b75c1aab469bc8b174f15862ee65b']
+  print('f is ', f['work_ready_timestamp'].values, f['ready_time_sec'].values)
 
   df["client"] = df["client"].astype("category")
   df["case_priority"] = df["case_priority"].astype("category")
@@ -127,12 +134,16 @@ def row_process(row):
   # an array of (client idx, duration)
   case_key_idx = paras[name_to_idx_key_str][row.case_key]
 
-
+  if paras['full'] == True:
+    return
   if row.case_key not in paras['today']: return
 
   #print('name = ', name)
-  if len(job_data) > paras[max_job_str]:
+  if len(job_data) == paras[max_job_str]:
+    print ('job lenth {}'.format(len(job_data)))
+    print ('delete {}'.format( paras['last_inserted_case']))
     del job_data[paras['last_inserted_case']]
+    paras['full'] = True
     return
 
   if case_key_idx not in job_data:
@@ -150,10 +161,9 @@ def read():
   df = load_real_data()
   df.apply(row_process,  axis=1)
   for key in job_data:
+    print (f'job {key}')
     examine_case(key)
-  stage = {}
-  stage[1,2] = 4
-  for key, item in stage.items():
-    print (key[0], key[1], item)
+
+  print(f'nb jobs {len(job_data)}')
 read()
 lab_model(paras, job_data)

@@ -25,8 +25,8 @@ def lab_model(paras, job_data, day_index=0):
     # this is correct
 
     for d in days:
-        start = 8 * seconds_per_hour + (day_index + d) * day_in_seconds
-        end = 18 * seconds_per_hour + (day_index + d) * day_in_seconds
+        start = paras['start'] * seconds_per_hour + (day_index + d) * day_in_seconds
+        end = paras['end'] * seconds_per_hour + (day_index + d) * day_in_seconds
         starts_time.append(start)
         ends_time.append(end)
     print(f'starting times are {starts_time}')
@@ -296,7 +296,7 @@ def lab_model(paras, job_data, day_index=0):
 
         # todo average case duration is not correct in this floatted version
         if objective_choice == 'minimise_total_case_duration':
-            print('average duration {}'.format(solver.ObjectiveValue() / day_in_seconds / paras['max_jobs']))
+            print('average duration {}'.format(solver.ObjectiveValue() / day_in_seconds))
         else:
             print('max in_system duration =', solver.ObjectiveValue() / day_in_seconds)
         if status == cp_model.FEASIBLE:
