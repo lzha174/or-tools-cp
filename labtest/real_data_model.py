@@ -6,32 +6,31 @@ from drawing import draw
 
 import pandas as pd
 import numpy as np
+from model import *
+from commonstr import *
 import openpyxl
-from datetime import datetime
-from datetime import timedelta
 
-name_to_idx_key_str = 'name_to_idx_key'
-idx_to_name_key_str = 'idx_to_name_key'
 
-name_to_idx_client_str = 'name_to_idx_client'
-idx_to_name_client_str = 'idx_to_name_client'
 
-name_to_idx_priority_str = 'name_to_idx_priority'
-idx_to_name_priority_str = 'idx_to_name_priority'
 
-batch_stage_idx_str = 'batch_stage_idx'
-nine_hour_priority_idx_str = 'nine_hour_priority_idx'
-
-max_job_str = 'max_job'
-job_data_dict_str = 'job_data'
-
-task_type = collections.namedtuple('task', 'client_idx priority_idx duration')
+task_type = collections.namedtuple('task', 'client_idx priority_idx duration ready_time')
 
 job_data = {}  # key by key_idx, inside need to store tasks in order which may have same tasks at different stage
 
 
 paras = {
   max_job_str: 2,
+  'days': 8,
+  'start': 8,  # start time for non embedding stage
+  'end': 18,  # end time for non embedding stage,  8pm - 5am
+  'start_emdbedding': [12 * seconds_per_hour, 20 * seconds_per_hour],
+  # start time for category 0 and 1 at stage 2, 12pm, and 6 pm
+  'duration_2': [2 * seconds_per_hour, 9 * seconds_per_hour],  # duration for category 0 and 1 at embedding in seconds
+  'max_jobs': 2,
+  'max_serach_time_sec': 30,
+  'capacity':{0:3, 1: 12,2: 1000, 3: 8, 4:4},
+  job_weights_str: [],
+  'result': []
 }
 
 def examine_case(case_idx):
@@ -40,7 +39,8 @@ def examine_case(case_idx):
     client = paras[idx_to_name_client_str][task.client_idx]
     priority = paras[idx_to_name_priority_str][task.priority_idx]
     duration = task.duration
-    print(f'client {client} priority {priority} duration {duration}')
+    ready = task.ready_time
+    print(f'client {client} priority {priority} duration {duration} ready {ready}')
 
 
 def load_real_data():
@@ -92,6 +92,7 @@ def load_real_data():
 
   paras[batch_stage_idx_str] = name_to_idx_client['Embedding']
   paras[nine_hour_priority_idx_str] = name_to_idx_priority['9 Hours']
+  paras[two_hour_priority_idx_str] = name_to_idx_priority['2 Hours']
   #print(f'name to idx key {paras[name_to_idx_key_str] }')
   #print(f'idx to name key {paras[idx_to_name_key_str]}')
 
@@ -122,13 +123,19 @@ def row_process(row):
     job_data[case_key_idx] = []
   client_idx = paras[name_to_idx_client_str][row.client]
   priority_idx = paras[name_to_idx_priority_str][row.case_priority]
-  task = task_type(client_idx = client_idx, priority_idx=priority_idx ,duration= int(row.duration_sec))
+  task = task_type(client_idx = client_idx, priority_idx=priority_idx ,duration= int(row.duration_sec), ready_time=int(row.ready_time_sec))
   job_data[case_key_idx].append(task)
+  # newly added job has weight of 1
+  paras[job_weights_str].append(1)
 
 
 def read():
   df = load_real_data()
   df.apply(row_process,  axis=1)
   examine_case(1)
-
+  stage = {}
+  stage[1,2] = 4
+  for key, item in stage.items():
+    print (key[0], key[1], item)
 read()
+lab_model(paras, job_data)
