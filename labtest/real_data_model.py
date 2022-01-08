@@ -18,15 +18,15 @@ job_data = {}  # key by key_idx, inside need to store tasks in order which may h
 
 
 paras = {
-  max_job_str: 162,
-  'days': 4,
+  max_job_str: 354,
+  'days': 5,
   'start': 8,  # start time for non embedding stage
   'end': 23,  # end time for non embedding stage,  8pm - 5am
   'start_emdbedding': [12 * seconds_per_hour, 20 * seconds_per_hour],
   # start time for category 0 and 1 at stage 2, 12pm, and 6 pm
   'duration_2': [2 * seconds_per_hour, 9 * seconds_per_hour],  # duration for category 0 and 1 at embedding in seconds
 
-  'max_serach_time_sec': 10,
+  'max_serach_time_sec': 60,
   'capacity':{0:3, 1: 12,2: 1000, 3: 8, 4:4},
   job_weights_str: {},
   'result': [],
@@ -67,11 +67,34 @@ def load_real_data():
   f =  df[df.case_key == 'ff65e4c1533550f73c6986d629fad87cbb9b75c1aab469bc8b174f15862ee65b']
   print('f is ', f['work_ready_timestamp'].values, f['ready_time_sec'].values)
 
+  # remove jobs that has more than 2 embeddings, first need to count
+  # count how many embeeddings for each key
+  # first find all rows whose client is embeddings
+
+  f = df[df.client == 'Embedding']
+  f = f.groupby(by='case_key').client.value_counts()
+  count_dict = {}
+  # create a dict of case_key, embedding value count
+  for i, v in f.iteritems():
+    print('index: ', i[0], 'value: ', v)
+    count_dict[i[0]] = v
+
+  df['embedding_count'] = df['case_key']
+  df['embedding_count'] = df["embedding_count"].map(count_dict)
+  # only consider embedding less than 3 for now
+  df = df[df['embedding_count'] < 3]
+
+  print(df["case_key"].head(2))
+  print(df.groupby(by='client').duration_sec.quantile(0.75))
+  print(df.groupby(by='client').duration_sec.describe())
+
+  # todo , only take 75% quantile duration cases
+
   df["client"] = df["client"].astype("category")
   df["case_priority"] = df["case_priority"].astype("category")
 
   df.drop(df[df.duration_sec <1].index, inplace=True)
-
+  # get first stage ready time, include jobs for today's job
   tmp = df[df.case_stage_rank == 1]
   tmp = tmp[tmp.work_ready_timestamp < '2021-05-18 00:00:00'].case_key
   todayJobs = list(tmp.unique())
