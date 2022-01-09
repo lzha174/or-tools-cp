@@ -67,9 +67,9 @@ def lab_model(paras, job_data, day_index=0):
 
             end = model.NewIntVar(starts_time[0], horizon, 'end ' + suffix)
 
-            start_job[j, stage] = start
-            end_job[j, stage] = end
-            durations[j, stage] = duration
+            start_job[j, idx] = start
+            end_job[j, idx] = end
+            durations[j, idx] = duration
 
             # first task start time >= ready time
             if idx == 0:
@@ -225,11 +225,13 @@ def lab_model(paras, job_data, day_index=0):
             floatted_flag = None
             for idx, task in enumerate(tasks):
                 t = task.client_idx
-                start = start_job.get((j, t), None)
+                task_name = paras[idx_to_name_client_str][t]
+                start = start_job.get((j, idx), None)
                 if start is None: continue
 
                 if (t != paras[batch_stage_idx_str]) and solver.Value(start) >= starts_time[1] and floatted_flag is None:
                     floatted_day = solver.Value(start) // day_in_seconds
+                    print(f'folloated_day is  {floatted_day}')
                     unfinished = unfinshed_job_type(case_idx=j, task_idx= idx)
                     if floatted_day not in unfinished_jobs:
                         # remember the first unifished task
@@ -239,22 +241,22 @@ def lab_model(paras, job_data, day_index=0):
                     floatted_flag = j
 
 
-                start_time = format_time(solver.Value(start_job[j, t]))
-                end_time = format_time(solver.Value(end_job[j, t]))
+                start_time = format_time(solver.Value(start_job[j, idx]))
+                end_time = format_time(solver.Value(end_job[j, idx]))
 
-                formatted_start_time[j, t] = start_time
-                formatted_end_time[j, t] = end_time
-                duration = solver.Value(durations[j, t])
-                formatted_durations[j, t] = duration
-                print(f'job {case} task {t}')
+                formatted_start_time[j, idx] = start_time
+                formatted_end_time[j, idx] = end_time
+                duration = solver.Value(durations[j, idx])
+                formatted_durations[j, idx] = duration
+                print(f'job {case} task {task_name}')
                 print(
                     'start {}, duration {}, end {}'.format(start_time, duration,
                                                           end_time))
 
                 if t not in x_pairs_dict:
-                    x_pairs_dict[t] = [(solver.Value(start_job[j, t]), duration)]
+                    x_pairs_dict[t] = [(solver.Value(start_job[j, idx]), duration)]
                 else:
-                    x_pairs_dict[t].append((solver.Value(start_job[j, t]), duration))
+                    x_pairs_dict[t].append((solver.Value(start_job[j, idx]), duration))
 
                 if floatted_flag is not None:
                     job_duration = (solver.Value(last_end[j]) - ready_times[j]) / day_in_seconds
@@ -263,32 +265,49 @@ def lab_model(paras, job_data, day_index=0):
                     case_durations.append(job_duration)
             if floatted_flag is None:
                 finished_today.append(j)
+        new_jobs = {} # construst floatted job for next day
+        print(f'day_index is {day_index}')
+        key = day_index + 1
+        jobs = unfinished_jobs[key]
 
-        for key in unfinished_jobs:
-            print(f'day {key} unfinished {unfinished_jobs[key]}')
+        print(f'day {key} unfinished {unfinished_jobs[key]}')
+            #print('unifished {}'.format(len(unfinished_jobs[key])))
+        for job in jobs:
+            job_key = job.case_idx
+            task_key = job.task_idx
+
+            original_tasks = job_data[job_key]
+            unfinished_tasks = original_tasks[task_key:]
+            new_jobs[job_key] = unfinished_tasks
+
+        for key, jobs in new_jobs.items():
+            print (f'new jobs {key} are {jobs}')
+        paras['unfinished'][day_index] = {}
+        paras['unfinished'][day_index] = new_jobs
+
+        print ('finished {}'.format(finished_today))
 
         all_results = []  # each row - job id, stage , start, end duration
 
         for case in finished_today:
             j = case
+            print(f'case is {case}')
             tasks = job_data[case]
             for idx, task in enumerate(tasks):
                 t = task.client_idx
-                start = formatted_start_time.get((j, t), None)
+                start = formatted_start_time.get((j, idx), None)
                 if start is None: continue
 
-                job_data = ['job_{i}'.format(i=case)]
-                end = formatted_end_time.get((j, t), None)
-                duration = formatted_durations.get((j, t), None)
-                job_data = job_data + [t, start, end, duration]
-                all_results.append(job_data)
+                finished_data = ['job_{i}'.format(i=case)]
+                end = formatted_end_time.get((j, idx), None)
+                duration = formatted_durations.get((j, idx), None)
+                finished_data = finished_data + [t, start, end, duration]
+                all_results.append(finished_data)
 
 
         # this is useful to calculate performace
         df = pd.DataFrame(all_results, columns=['job', 'stage', 'start', 'end', 'duration'])
         df[["start", "end"]] = df[["start", "end"]].apply(pd.to_datetime)
-        print(df.head)
-        print(df.info())
 
         paras['result'].append(df)
 

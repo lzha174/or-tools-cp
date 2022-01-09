@@ -19,6 +19,10 @@ job_data_dict_str = 'job_data'
 
 job_weights_str = 'job weight'
 
+day_zero = '2021-05-18 00:00:00'
+day_one = '2021-05-19 00:00:00'
+day_two = '2021-05-20 00:00:00'
+
 # now change to
 seconds_per_hour = 60 * 60
 day_in_seconds = 24 * 60 * 60

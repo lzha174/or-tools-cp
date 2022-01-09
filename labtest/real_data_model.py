@@ -18,7 +18,8 @@ job_data = {}  # key by key_idx, inside need to store tasks in order which may h
 
 
 paras = {
-  max_job_str: 354,
+  'unfinished': {}, #key by starting day index, store a dic of unifished jobs by day index (base from the very begining)
+  max_job_str:4,
   'days': 5,
   'start': 8,  # start time for non embedding stage
   'end': 23,  # end time for non embedding stage,  8pm - 5am
@@ -26,7 +27,7 @@ paras = {
   # start time for category 0 and 1 at stage 2, 12pm, and 6 pm
   'duration_2': [2 * seconds_per_hour, 9 * seconds_per_hour],  # duration for category 0 and 1 at embedding in seconds
 
-  'max_serach_time_sec': 60,
+  'max_serach_time_sec': 120,
   'capacity':{0:3, 1: 12,2: 1000, 3: 8, 4:4},
   job_weights_str: {},
   'result': [],
@@ -81,6 +82,9 @@ def load_real_data():
 
   df['embedding_count'] = df['case_key']
   df['embedding_count'] = df["embedding_count"].map(count_dict)
+
+
+  # most embedding has no mor ethen 2 repeats, remove 4 3-time embeddings and 1 5-times embeddings
   # only consider embedding less than 3 for now
   df = df[df['embedding_count'] < 3]
 
@@ -95,12 +99,45 @@ def load_real_data():
 
   df.drop(df[df.duration_sec <1].index, inplace=True)
   # get first stage ready time, include jobs for today's job
+
+
+  quantile = dict(df.groupby(by='client').duration_sec.quantile(0.95))
+  print('quantile is')
+  for key, value in quantile.items():
+    print(key, value/60, 'mins')
+  del quantile['Embedding']
+  paras['95_quantile'] = quantile
+
+
+  # get first day, second day, thrid day starting jobs
+
   tmp = df[df.case_stage_rank == 1]
-  tmp = tmp[tmp.work_ready_timestamp < '2021-05-18 00:00:00'].case_key
+
+  print(tmp["embedding_count"].value_counts())
+  tmp = tmp[tmp.work_ready_timestamp < day_zero].case_key
   todayJobs = list(tmp.unique())
   print(todayJobs)
   print(f'today jobs {len(todayJobs)}')
-  paras['today'] = todayJobs
+  paras[day_zero] = todayJobs
+
+  tmp = df[df.case_stage_rank == 1]
+
+  print(tmp["embedding_count"].value_counts())
+  tmp = tmp[(tmp.work_ready_timestamp > day_zero) & (tmp.work_ready_timestamp < day_one)].case_key
+  todayJobs = list(tmp.unique())
+  print(todayJobs)
+  print(f'day 1 jobs {len(todayJobs)}')
+  paras[day_one] = todayJobs
+
+  tmp = df[df.case_stage_rank == 1]
+
+  print(tmp["embedding_count"].value_counts())
+  tmp = tmp[(tmp.work_ready_timestamp > day_one) & (tmp.work_ready_timestamp < day_two)].case_key
+  todayJobs = list(tmp.unique())
+  print(todayJobs)
+  print(f'day 2 jobs {len(todayJobs)}')
+  paras[day_two] = todayJobs
+
 
 
   print(df.groupby(by=['client'])['duration_sec'].describe())
@@ -148,7 +185,7 @@ def load_real_data():
   return df
 
 
-def row_process(row):
+def row_process(row, day):
   global addedjob
   global job_data
   # let me process one row first
@@ -159,7 +196,7 @@ def row_process(row):
 
   if paras['full'] == True:
     return
-  if row.case_key not in paras['today']: return
+  if row.case_key not in paras[day]: return
 
   #print('name = ', name)
   if len(job_data) == paras[max_job_str]:
@@ -173,7 +210,12 @@ def row_process(row):
     job_data[case_key_idx] = []
   client_idx = paras[name_to_idx_client_str][row.client]
   priority_idx = paras[name_to_idx_priority_str][row.case_priority]
-  task = task_type(client_idx = client_idx, priority_idx=priority_idx ,duration= int(row.duration_sec), ready_time=int(row.ready_time_sec))
+  duration = int(row.duration_sec)
+  # reaplce duration if it is above 95% quantile with 95% quantile value
+  if row.client in paras['95_quantile']:
+    if row.duration_sec > paras['95_quantile'][row.client]:
+      duration = int(paras['95_quantile'][row.client])
+  task = task_type(client_idx = client_idx, priority_idx=priority_idx ,duration= duration, ready_time=int(row.ready_time_sec))
   job_data[case_key_idx].append(task)
   # newly added job has weight of 1
   paras[job_weights_str][case_key_idx] = 1
@@ -182,11 +224,49 @@ def row_process(row):
 
 def read():
   df = load_real_data()
-  df.apply(row_process,  axis=1)
+  return df
+
+def load_new_day(df, day, day_index = 0):
+  
+  
+  
+  df.apply(row_process, args = (day,), axis=1)
+  
+  # add floatted job
+  if day_index > 0:
+    unfinished = paras['unfinished'][day_index - 1]
+    for case_key_idx, tasks in unfinished.items():
+      if case_key_idx not in job_data:
+        job_data[case_key_idx] = []
+      for task in tasks:
+        new_task = task_type(client_idx = task.client_idx,
+                             priority_idx=task.priority_idx ,duration= task.duration,
+                             ready_time= day_in_seconds * day_index + 7 * seconds_per_hour)
+
+
+        job_data[case_key_idx].append(new_task)
+
+                  
+    
   for key in job_data:
     print (f'job {key}')
     examine_case(key)
 
   print(f'nb jobs {len(job_data)}')
-read()
+
+
+df = read()
+
+
+load_new_day(df, day_zero)
+
 lab_model(paras, job_data)
+
+paras['full'] = False
+job_data = {}
+load_new_day(df, day_one, 1)
+print(job_data)
+lab_model(paras, job_data, 1)
+
+print(paras['unfinished'][0])
+print(paras['unfinished'][1])
