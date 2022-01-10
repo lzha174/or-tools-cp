@@ -12,7 +12,8 @@ def lab_model(paras, job_data, day_index=0):
 
     # define starting time, ending time in mins for 3 days
     # this need to be changed
-
+    logstr = []
+    
     maxDuration = 9 * seconds_per_hour
 
 
@@ -43,7 +44,6 @@ def lab_model(paras, job_data, day_index=0):
     # ending time of tasks of each job
     end_job = {}
     durations = {}
-    jobs = {}  # intervals index by job_id, task id
     # this needs to be chagnes
     stage_tasks = {}  # indexed by stage id
     first_start = {}
@@ -55,6 +55,13 @@ def lab_model(paras, job_data, day_index=0):
         j = case
         for idx, task in enumerate(tasks):
             stage = task.client_idx
+            client = paras[idx_to_name_client_str][stage]
+            if client in paras['95_quantile']:
+                minDuration = 1
+                maxDuration = int(paras['95_quantile'][client]) + 1
+            else:
+                minDuration = 7200
+                maxDuration = 32400
             priority = task.priority_idx
             duration_time = task.duration
             ready_time = task.ready_time
@@ -63,7 +70,7 @@ def lab_model(paras, job_data, day_index=0):
 
             start = model.NewIntVar(starts_time[0], horizon, 'start ' + suffix)
 
-            duration = model.NewIntVar(0, maxDuration, 'duration' + suffix)
+            duration = model.NewIntVar(minDuration, maxDuration, 'duration' + suffix)
 
             end = model.NewIntVar(starts_time[0], horizon, 'end ' + suffix)
 
@@ -86,9 +93,9 @@ def lab_model(paras, job_data, day_index=0):
             if previous_end is not None:
                 model.Add(start >= previous_end)
             previous_end = end
-
+            model.Add(start  + duration == end)
             task_interval = model.NewIntervalVar(start, duration, end, 'interval ' + suffix)
-            jobs[j, stage] = task_interval
+
             # put the interval into correct stage, a job can have duplicate tasks at the same stage such as signing out
             if stage not in stage_tasks:
                 stage_tasks[stage] = [task_interval]
@@ -218,7 +225,7 @@ def lab_model(paras, job_data, day_index=0):
 
         # I want to store unifinished jobs based on day index, only deal with jobs that not finished tmr for next day planning
         unfinished_jobs = {}  # key = day, arrays of first unfinished stage
-        unfinshed_job_type = collections.namedtuple('unfinished', 'case_idx, task_idx')
+        unfinshed_job_type = collections.namedtuple('unfinished', 'case_idx, task_idx ready_time')
         finished_today = []
         for case, tasks in job_data.items():
             j = case
@@ -229,13 +236,18 @@ def lab_model(paras, job_data, day_index=0):
                 start = start_job.get((j, idx), None)
                 if start is None: continue
 
-                if (t != paras[batch_stage_idx_str]) and solver.Value(start) >= starts_time[1] and floatted_flag is None:
+                # a batch job may start next day evening, or lunch, view this as unfinished and rolled to next day
+                if solver.Value(start) >= starts_time[1] and floatted_flag is None:
                     # as long as a non batch task did not finish today , we put the remaining tasks into next day planning
 
                     #floatted_day = solver.Value(start) // day_in_seconds
                     floatted_day = day_index + 1
                     print(f'folloated_day is  {floatted_day}')
-                    unfinished = unfinshed_job_type(case_idx=j, task_idx= idx)
+                    if idx > 0:
+                        unfinished = unfinshed_job_type(case_idx=j, task_idx= idx, ready_time= solver.Value(end_job[j, idx-1]))
+                    else:
+                        unfinished = unfinshed_job_type(case_idx=j, task_idx=idx,
+                                                        ready_time=task.ready_time)
                     if floatted_day not in unfinished_jobs:
                         # remember the first unifished task
                         unfinished_jobs[floatted_day] = [unfinished]
@@ -254,22 +266,35 @@ def lab_model(paras, job_data, day_index=0):
                 case_key = paras[idx_to_name_key_str][j]
                 # the ready time should the today's morning time
                 fomratted_ready = format_time(task.ready_time)
-                if ((t != paras[batch_stage_idx_str]) and solver.Value(end_job[j, idx]) <= ends_time[0])\
-                        or ( t == paras[batch_stage_idx_str] and solver.Value(end_job[j, idx]) <= starts_time[1]):
-                    # this task is finished today
 
-                    finished_data = [case, task_name, task.order, start_time, end_time, duration, fomratted_ready]
-                    if day_index == 1 and j == 9:
-                        print(f'9 task {finished_data}')
+
+
+                #if ((t != paras[batch_stage_idx_str]) and solver.Value(end_job[j, idx]) <= ends_time[0])\
+                #        or ( t == paras[batch_stage_idx_str] and solver.Value(end_job[j, idx]) <= starts_time[1]) :
+                if True:
+                    # this task is finished today
+                    new_ready_time = fomratted_ready
+                    if idx > 0:
+                        new_ready_time = format_time(solver.Value(end_job[j, idx-1]))
+
+                    finished_data = [case, task_name, task.order, start_time, end_time, duration, new_ready_time]
+                    if j == 7:
+                        l_str = 'job {} task {} start {}, duration {}, end {} ready {}\n'.format(case, task_name,
+                                                                                                 start_time, duration,
+                                                                                                 end_time,
+                                                                                                 new_ready_time)
+                        logstr.append(l_str)
                     paras['result'].append(finished_data)
                 # a batch task finish after mid nite is also considered finished
 
 
 
-                print(f'job {case} task {task_name}')
-                print(
-                    'start {}, duration {}, end {}'.format(start_time, duration,
-                                                          end_time))
+                    
+                    print(f'job {case} task {task_name}')
+
+                    print(
+                        'start {}, duration {}, end {} ready {}'.format(start_time, duration,
+                                                              end_time, ready_times[j]))
 
                 if t not in x_pairs_dict:
                     x_pairs_dict[t] = [(solver.Value(start_job[j, idx]), duration)]
@@ -293,19 +318,23 @@ def lab_model(paras, job_data, day_index=0):
         for job in jobs:
             job_key = job.case_idx
             task_key = job.task_idx
+            ready_time = job.ready_time
 
             original_tasks = job_data[job_key]
             unfinished_tasks = original_tasks[task_key:]
             # change readty_time to tmr starting time
-            for task in unfinished_tasks:
-                task.ready_time = starts_time[1]
+            new_tasks = []
+            for idx, task in enumerate(unfinished_tasks):
+                if idx == 0:
+                    task = task._replace(ready_time=ready_time)
+                new_tasks.append(task)
+                print('ready_time', format_time(task.ready_time))
 
-            new_jobs[job_key] = unfinished_tasks
+            new_jobs[job_key] = new_tasks
 
         for key, jobs in new_jobs.items():
             print (f'new jobs {key} are {jobs}')
-        paras['unfinished'][day_index] = {}
-        paras['unfinished'][day_index] = new_jobs
+        paras['unfinished'] = new_jobs
 
         print ('finished {}'.format(finished_today))
         print ('total jobs', len(finished_today) + len(new_jobs))
@@ -366,3 +395,4 @@ def lab_model(paras, job_data, day_index=0):
             draw.draw_gannt(x_pairs, stage, day_start_times, day_index)
 
         print(paras['result'])
+        write_to_file(logstr)

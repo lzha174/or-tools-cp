@@ -18,8 +18,8 @@ job_data = {}  # key by key_idx, inside need to store tasks in order which may h
 
 
 paras = {
-  'unfinished': {}, #key by starting day index, store a dic of unifished jobs by day index (base from the very begining)
-  max_job_str:4,
+  'unfinished': None, #unfinished job from befor b4
+  max_job_str: 420,
   'days': 5,
   'start': 8,  # start time for non embedding stage
   'end': 23,  # end time for non embedding stage,  8pm - 5am
@@ -27,25 +27,31 @@ paras = {
   # start time for category 0 and 1 at stage 2, 12pm, and 6 pm
   'duration_2': [2 * seconds_per_hour, 9 * seconds_per_hour],  # duration for category 0 and 1 at embedding in seconds
 
-  'max_serach_time_sec': 360,
+  'max_serach_time_sec': 600,
   'capacity':{0:3, 1: 12,2: 1000, 3: 8, 4:4},
   job_weights_str: {},
   'result': [],
-  'full' : False
+  'full' : False,
+  'day_jobs':{}
 }
 
 
 
-def examine_case(case_idx):
+def examine_case(case_idx, day_index = 0):
   print (paras[idx_to_name_key_str][case_idx])
   tasks =  job_data[case_idx]
   for idx, task in enumerate(tasks):
-    if idx > 0: break
+
     client = paras[idx_to_name_client_str][task.client_idx]
     priority = paras[idx_to_name_priority_str][task.priority_idx]
     duration = task.duration
     ready = format_time(task.ready_time)
     print(f'client {client} priority {priority} duration {duration} ready {ready} ready {task.ready_time}')
+      
+    pd_ready_time = pd.to_datetime(ready)
+    pd_day_end = pd.to_datetime(day_endings[day_index])
+    if (idx ==0):
+     assert(pd_ready_time < pd_day_end)
 
 
 def load_real_data():
@@ -77,7 +83,7 @@ def load_real_data():
   count_dict = {}
   # create a dict of case_key, embedding value count
   for i, v in f.iteritems():
-    print('index: ', i[0], 'value: ', v)
+    #print('index: ', i[0], 'value: ', v)
     count_dict[i[0]] = v
 
   df['embedding_count'] = df['case_key']
@@ -119,6 +125,17 @@ def load_real_data():
   print(todayJobs)
   print(f'today jobs {len(todayJobs)}')
   paras[day_zero] = todayJobs
+
+  for idx, day_ending in  enumerate(day_endings):
+    tmp = df[df.case_stage_rank == 1]
+    if idx == 0:
+      tmp = tmp[(tmp.work_ready_timestamp < day_ending)].case_key
+    else:
+      tmp = tmp[(tmp.work_ready_timestamp > day_endings[idx-1]) & (tmp.work_ready_timestamp < day_ending)].case_key
+    day_jobs = list(tmp.unique())
+    paras['day_jobs'][idx] = day_jobs
+
+
 
   tmp = df[df.case_stage_rank == 1]
 
@@ -196,7 +213,7 @@ def row_process(row, day):
 
   if paras['full'] == True:
     return
-  if row.case_key not in paras[day]: return
+  if row.case_key not in paras['day_jobs'][day]: return
 
   #print('name = ', name)
   if len(job_data) == paras[max_job_str]:
@@ -215,6 +232,7 @@ def row_process(row, day):
   if row.client in paras['95_quantile']:
     if row.duration_sec > paras['95_quantile'][row.client]:
       duration = int(paras['95_quantile'][row.client])
+
   task = task_type(client_idx = client_idx, priority_idx=priority_idx ,duration= duration, ready_time=int(row.ready_time_sec), order = row.case_stage_rank)
   job_data[case_key_idx].append(task)
   # newly added job has weight of 1
@@ -226,52 +244,41 @@ def read():
   df = load_real_data()
   return df
 
-def load_new_day(df, day, day_index = 0):
+def load_new_day(df, day):
   
   
   
   df.apply(row_process, args = (day,), axis=1)
   
   # add floatted job
-  if day_index > 0:
-    unfinished = paras['unfinished'][day_index - 1]
+  if day > 0:
+    unfinished = paras['unfinished']
     for case_key_idx, tasks in unfinished.items():
+      job_data[case_key_idx] = tasks
       if case_key_idx not in job_data:
         job_data[case_key_idx] = []
       for task in tasks:
-        new_task = task_type(client_idx = task.client_idx,
-                             priority_idx=task.priority_idx ,duration= task.duration,
-                             ready_time= day_in_seconds * day_index + 7 * seconds_per_hour,
-                             order = task.order)
-
-
-        job_data[case_key_idx].append(new_task)
-        paras[job_weights_str][case_key_idx] = 2
+        paras[job_weights_str][case_key_idx] = 200
 
                   
     
   for key in job_data:
     print (f'job {key}')
-    examine_case(key)
+    examine_case(key, day)
 
   print(f'nb jobs {len(job_data)}')
 
 
 df = read()
 
+for day in range(0,2):
+  job_data = {}
+  paras['full'] = False
+  load_new_day(df, day)
+  print('total jobs for today {}'.format(len(job_data)))
+  lab_model(paras, job_data, day)
 
-load_new_day(df, day_zero)
 
-lab_model(paras, job_data)
-
-paras['full'] = False
-job_data = {}
-load_new_day(df, day_one, 1)
-print(job_data)
-lab_model(paras, job_data, 1)
-
-print(paras['unfinished'][0])
-print(paras['unfinished'][1])
 
 df = pd.DataFrame(paras['result'],
                   columns=['case_key', 'client', 'client_ordered', 'start', 'end', 'duration', 'ready_time'])
