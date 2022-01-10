@@ -12,7 +12,7 @@ import openpyxl
 
 
 
-task_type = collections.namedtuple('task', 'client_idx priority_idx duration ready_time')
+task_type = collections.namedtuple('task', 'client_idx priority_idx duration ready_time order')
 
 job_data = {}  # key by key_idx, inside need to store tasks in order which may have same tasks at different stage
 
@@ -27,7 +27,7 @@ paras = {
   # start time for category 0 and 1 at stage 2, 12pm, and 6 pm
   'duration_2': [2 * seconds_per_hour, 9 * seconds_per_hour],  # duration for category 0 and 1 at embedding in seconds
 
-  'max_serach_time_sec': 120,
+  'max_serach_time_sec': 360,
   'capacity':{0:3, 1: 12,2: 1000, 3: 8, 4:4},
   job_weights_str: {},
   'result': [],
@@ -215,7 +215,7 @@ def row_process(row, day):
   if row.client in paras['95_quantile']:
     if row.duration_sec > paras['95_quantile'][row.client]:
       duration = int(paras['95_quantile'][row.client])
-  task = task_type(client_idx = client_idx, priority_idx=priority_idx ,duration= duration, ready_time=int(row.ready_time_sec))
+  task = task_type(client_idx = client_idx, priority_idx=priority_idx ,duration= duration, ready_time=int(row.ready_time_sec), order = row.case_stage_rank)
   job_data[case_key_idx].append(task)
   # newly added job has weight of 1
   paras[job_weights_str][case_key_idx] = 1
@@ -241,10 +241,12 @@ def load_new_day(df, day, day_index = 0):
       for task in tasks:
         new_task = task_type(client_idx = task.client_idx,
                              priority_idx=task.priority_idx ,duration= task.duration,
-                             ready_time= day_in_seconds * day_index + 7 * seconds_per_hour)
+                             ready_time= day_in_seconds * day_index + 7 * seconds_per_hour,
+                             order = task.order)
 
 
         job_data[case_key_idx].append(new_task)
+        paras[job_weights_str][case_key_idx] = 2
 
                   
     
@@ -270,3 +272,10 @@ lab_model(paras, job_data, 1)
 
 print(paras['unfinished'][0])
 print(paras['unfinished'][1])
+
+df = pd.DataFrame(paras['result'],
+                  columns=['case_key', 'client', 'client_ordered', 'start', 'end', 'duration', 'ready_time'])
+df[["start", "end", "ready_time"]] = df[["start", "end", "ready_time"]].apply(pd.to_datetime)
+df = df.sort_values(["case_key", "client_ordered"], ascending = (False, True))
+df.to_csv('out.csv', index=False)
+print(df.head)

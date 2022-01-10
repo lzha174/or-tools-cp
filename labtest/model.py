@@ -230,7 +230,10 @@ def lab_model(paras, job_data, day_index=0):
                 if start is None: continue
 
                 if (t != paras[batch_stage_idx_str]) and solver.Value(start) >= starts_time[1] and floatted_flag is None:
-                    floatted_day = solver.Value(start) // day_in_seconds
+                    # as long as a non batch task did not finish today , we put the remaining tasks into next day planning
+
+                    #floatted_day = solver.Value(start) // day_in_seconds
+                    floatted_day = day_index + 1
                     print(f'folloated_day is  {floatted_day}')
                     unfinished = unfinshed_job_type(case_idx=j, task_idx= idx)
                     if floatted_day not in unfinished_jobs:
@@ -248,6 +251,21 @@ def lab_model(paras, job_data, day_index=0):
                 formatted_end_time[j, idx] = end_time
                 duration = solver.Value(durations[j, idx])
                 formatted_durations[j, idx] = duration
+                case_key = paras[idx_to_name_key_str][j]
+                # the ready time should the today's morning time
+                fomratted_ready = format_time(task.ready_time)
+                if ((t != paras[batch_stage_idx_str]) and solver.Value(end_job[j, idx]) <= ends_time[0])\
+                        or ( t == paras[batch_stage_idx_str] and solver.Value(end_job[j, idx]) <= starts_time[1]):
+                    # this task is finished today
+
+                    finished_data = [case, task_name, task.order, start_time, end_time, duration, fomratted_ready]
+                    if day_index == 1 and j == 9:
+                        print(f'9 task {finished_data}')
+                    paras['result'].append(finished_data)
+                # a batch task finish after mid nite is also considered finished
+
+
+
                 print(f'job {case} task {task_name}')
                 print(
                     'start {}, duration {}, end {}'.format(start_time, duration,
@@ -278,6 +296,10 @@ def lab_model(paras, job_data, day_index=0):
 
             original_tasks = job_data[job_key]
             unfinished_tasks = original_tasks[task_key:]
+            # change readty_time to tmr starting time
+            for task in unfinished_tasks:
+                task.ready_time = starts_time[1]
+
             new_jobs[job_key] = unfinished_tasks
 
         for key, jobs in new_jobs.items():
@@ -286,30 +308,32 @@ def lab_model(paras, job_data, day_index=0):
         paras['unfinished'][day_index] = new_jobs
 
         print ('finished {}'.format(finished_today))
+        print ('total jobs', len(finished_today) + len(new_jobs))
 
         all_results = []  # each row - job id, stage , start, end duration
+        # i want to save all finished tasks today
 
         for case in finished_today:
             j = case
-            print(f'case is {case}')
+            #print(f'case is {case}')
             tasks = job_data[case]
             for idx, task in enumerate(tasks):
                 t = task.client_idx
+                clinet = paras[idx_to_name_client_str][t]
                 start = formatted_start_time.get((j, idx), None)
                 if start is None: continue
 
                 finished_data = ['job_{i}'.format(i=case)]
                 end = formatted_end_time.get((j, idx), None)
                 duration = formatted_durations.get((j, idx), None)
-                finished_data = finished_data + [t, start, end, duration]
+                finished_data = finished_data + [clinet, start, end, duration]
                 all_results.append(finished_data)
 
 
         # this is useful to calculate performace
-        df = pd.DataFrame(all_results, columns=['job', 'stage', 'start', 'end', 'duration'])
-        df[["start", "end"]] = df[["start", "end"]].apply(pd.to_datetime)
 
-        paras['result'].append(df)
+
+        #paras['result'].append(df)
 
 
 
@@ -341,3 +365,4 @@ def lab_model(paras, job_data, day_index=0):
             day_start_times = [ (d + day_index) * day_in_seconds for d in days] + [ (d+1 + day_index) * day_in_seconds]
             draw.draw_gannt(x_pairs, stage, day_start_times, day_index)
 
+        print(paras['result'])
