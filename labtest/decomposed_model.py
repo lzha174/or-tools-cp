@@ -268,8 +268,8 @@ def half_lab_model(paras, job_data, day_index=0, period = morning_str):
                     new_ready_time = fomratted_ready
                     if idx > 0:
                         new_ready_time = format_time(solver.Value(end_job[j, idx - 1]))
-
-                    finished_data = [case, task_name, task.order, start_time, end_time, duration, new_ready_time]
+                    case_name = paras[idx_to_name_key_str][case]
+                    finished_data = [case, case_name, task_name, task.order, start_time, end_time, duration, new_ready_time]
                     l_str = 'job {} task {} start {}, duration {}, end {} ready {}\n'.format(case, task_name,
                                                                                                  start_time, duration,
                                                                                                  end_time,
@@ -277,10 +277,10 @@ def half_lab_model(paras, job_data, day_index=0, period = morning_str):
                     logstr.append(l_str)
                     paras['result'].append(finished_data)
                     # a batch task finish after mid nite is also considered finished
+                    if j == 7:
+                        print(f'job {case} task {task_name}')
 
-                    print(f'job {case} task {task_name}')
-
-                    print(
+                        print(
                         'start {}, duration {}, end {} ready {}'.format(start_time, duration,
                                                                        end_time, ready_times[j]))
 

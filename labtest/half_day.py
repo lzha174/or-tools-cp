@@ -16,10 +16,10 @@ job_data = {}  # key by key_idx, inside need to store tasks in order which may h
 
 paras = {
     'unfinished': {},  # unfinished job from befor b4
-    max_job_str: 450,
+    max_job_str: 450 ,
     'days': 5,
     'start': 8,  # start time for non embedding stage
-    'end': 23,  # end time for non embedding stage,  8pm - 5am
+    'end': 21.5,  # end time for non embedding stage,  8pm - 5am
     'start_emdbedding': [12 * seconds_per_hour, 20 * seconds_per_hour],
     # start time for category 0 and 1 at stage 2, 12pm, and 6 pm
     'duration_2': [2 * seconds_per_hour, 9 * seconds_per_hour],  # duration for category 0 and 1 at embedding in seconds
@@ -32,6 +32,7 @@ paras = {
     'day_jobs': {}
 }
 
+# i want to find max work time at evening
 
 def examine_case(case_idx, day_index=0):
     print(paras[idx_to_name_key_str][case_idx])
@@ -279,7 +280,7 @@ for day in range(len(half_day_pairs)):
 
 
 df = pd.DataFrame(paras['result'],
-                  columns=['case_key', 'client', 'case_stage_rank', 'start', 'end', 'duration', 'ready_time'])
+                  columns=['case_key', 'case_name', 'client', 'case_stage_rank', 'start', 'end', 'duration', 'ready_time'])
 df[["start", "end", "ready_time"]] = df[["start", "end", "ready_time"]].apply(pd.to_datetime)
 df = df.sort_values(["case_key", "case_stage_rank"], ascending=(False, True))
 df.to_csv('out.csv', index=False)
