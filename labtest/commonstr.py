@@ -20,12 +20,27 @@ job_data_dict_str = 'job_data'
 job_weights_str = 'job weight'
 
 day_start = '2021-05-17 00:00:00'
+day_start_mid = '2021-05-17 14:00:00'
 day_zero = '2021-05-18 00:00:00'
+day_zero_mid = '2021-05-18 14:00:00'
 day_one = '2021-05-19 00:00:00'
+day_one_mid = '2021-05-19 14:00:00'
 day_two = '2021-05-20 00:00:00'
+day_two_mid = '2021-05-20 14:00:00'
 day_three = '2021-05-21 00:00:00'
+day_three_mid = '2021-05-21 14:00:00'
+
+morning_str = 'morning'
+lunch_str = 'lunch'
+
+periods = [morning_str, lunch_str]
 
 day_endings = [day_zero, day_one, day_two, day_three]
+
+half_day_pairs = [{morning_str:(day_start, day_start_mid), lunch_str:(day_start_mid, day_zero)},
+                  {morning_str:(day_zero, day_zero_mid), lunch_str:(day_zero_mid, day_one)},
+                  {morning_str:(day_one, day_one_mid), lunch_str:(day_one_mid, day_two)},
+                  {morning_str:(day_two, day_two_mid), lunch_str:(day_two_mid, day_three)}]
 # now change to
 seconds_per_hour = 60 * 60
 day_in_seconds = 24 * 60 * 60

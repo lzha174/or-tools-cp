@@ -6,7 +6,7 @@ from drawing import draw
 
 import pandas as pd
 import numpy as np
-from model import *
+from decomposed_model import *
 from commonstr import *
 import openpyxl
 
@@ -15,8 +15,8 @@ task_type = collections.namedtuple('task', 'client_idx priority_idx duration rea
 job_data = {}  # key by key_idx, inside need to store tasks in order which may have same tasks at different stage
 
 paras = {
-    'unfinished': None,  # unfinished job from befor b4
-    max_job_str: 440,
+    'unfinished': {},  # unfinished job from befor b4
+    max_job_str: 450,
     'days': 5,
     'start': 8,  # start time for non embedding stage
     'end': 23,  # end time for non embedding stage,  8pm - 5am
@@ -24,7 +24,7 @@ paras = {
     # start time for category 0 and 1 at stage 2, 12pm, and 6 pm
     'duration_2': [2 * seconds_per_hour, 9 * seconds_per_hour],  # duration for category 0 and 1 at embedding in seconds
 
-    'max_serach_time_sec': 1200,
+    'max_serach_time_sec': 480,
     'capacity': {0: 3, 1: 12, 2: 1000, 3: 8, 4: 4},
     job_weights_str: {},
     'result': [],
@@ -118,33 +118,20 @@ def load_real_data():
     print(f'today jobs {len(todayJobs)}')
     paras[day_zero] = todayJobs
 
-    for idx, day_ending in enumerate(day_endings):
-        tmp = df[df.case_stage_rank == 1]
-        if idx == 0:
-            tmp = tmp[(tmp.work_ready_timestamp < day_ending)].case_key
-        else:
+    for idx, half_pair in enumerate(half_day_pairs):
+        # idx is day index
+        for period, data_range in half_pair.items():
+            tmp = df[df.case_stage_rank == 1]
             tmp = tmp[
-                (tmp.work_ready_timestamp > day_endings[idx - 1]) & (tmp.work_ready_timestamp < day_ending)].case_key
-        day_jobs = list(tmp.unique())
-        paras['day_jobs'][idx] = day_jobs
+                (tmp.work_ready_timestamp > data_range[0]) & (tmp.work_ready_timestamp < data_range[1])].case_key
+            period_jobs = list(tmp.unique())
+            paras['day_jobs'][idx, period] = period_jobs
 
-    tmp = df[df.case_stage_rank == 1]
 
-    print(tmp["embedding_count"].value_counts())
-    tmp = tmp[(tmp.work_ready_timestamp > day_zero) & (tmp.work_ready_timestamp < day_one)].case_key
-    todayJobs = list(tmp.unique())
-    print(todayJobs)
-    print(f'day 1 jobs {len(todayJobs)}')
-    paras[day_one] = todayJobs
 
-    tmp = df[df.case_stage_rank == 1]
 
-    print(tmp["embedding_count"].value_counts())
-    tmp = tmp[(tmp.work_ready_timestamp > day_one) & (tmp.work_ready_timestamp < day_two)].case_key
-    todayJobs = list(tmp.unique())
-    print(todayJobs)
-    print(f'day 2 jobs {len(todayJobs)}')
-    paras[day_two] = todayJobs
+
+
 
     print(df.groupby(by=['client'])['duration_sec'].describe())
     print(df['duration_sec'].min())
@@ -195,9 +182,9 @@ case_max_stages = {}
 
 bench_ready_time = {}
 bench_finish_time = {}
+min_ready_times = {}
 
-
-def row_process(row, day):
+def row_process(row, day, period):
     global addedjob
     global job_data
     # let me process one row first
@@ -209,8 +196,9 @@ def row_process(row, day):
 
     if paras['full'] == True:
         return
-    if day not in paras['day_jobs']: return
-    if row.case_key not in paras['day_jobs'][day]: return
+    x = paras['day_jobs'].get((day, period), None)
+    if x is None: return
+    if row.case_key not in paras['day_jobs'][day, period]: return
 
     # print('name = ', name)
     if len(job_data) == paras[max_job_str]:
@@ -230,9 +218,11 @@ def row_process(row, day):
     if case_key_idx not in bench_ready_time:
         bench_ready_time[case_key_idx] = row.work_ready_timestamp
         bench_finish_time[case_key_idx] = row.end_timestamp
+        min_ready_times[case_key_idx] = row.ready_time_sec
     else:
         bench_ready_time[case_key_idx] = min(row.work_ready_timestamp, bench_ready_time[case_key_idx])
         bench_finish_time[case_key_idx] = max(row.end_timestamp, bench_finish_time[case_key_idx])
+        min_ready_times[case_key_idx] = min(row.ready_time_sec,min_ready_times[case_key_idx])
 
     if case_key_idx not in case_max_stages:
         case_max_stages[case_key_idx] = case_stage_rank
@@ -244,7 +234,7 @@ def row_process(row, day):
             duration = int(paras['95_quantile'][row.client])
 
     task = task_type(client_idx=client_idx, priority_idx=priority_idx, duration=duration,
-                     ready_time=int(row.ready_time_sec), order=row.case_stage_rank)
+                     ready_time=int(min_ready_times[case_key_idx]), order=row.case_stage_rank)
     job_data[case_key_idx].append(task)
     # newly added job has weight of 1
     paras[job_weights_str][case_key_idx] = 1
@@ -256,11 +246,11 @@ def read():
     return df
 
 
-def load_new_day(df, day):
-    df.apply(row_process, args=(day,), axis=1)
+def load_new_day(df, day, period):
+    df.apply(row_process, args=(day, period,), axis=1)
 
     # add floatted job
-    if day > 0:
+    if len(paras['unfinished']) > 0:
         unfinished = paras['unfinished']
         for case_key_idx, tasks in unfinished.items():
             job_data[case_key_idx] = tasks
@@ -268,7 +258,7 @@ def load_new_day(df, day):
                 job_data[case_key_idx] = []
             for task in tasks:
                 paras[job_weights_str][case_key_idx] = 200
-
+    return
     for key in job_data:
         print(f'job {key}')
         examine_case(key, day)
@@ -278,13 +268,15 @@ def load_new_day(df, day):
 
 df = read()
 
-for day in range(0, 4):
-    job_data = {}
-    paras['full'] = False
-    load_new_day(df, day)
-    print('total jobs for today {}'.format(len(job_data)))
-    if (len(job_data) == 0): break
-    lab_model(paras, job_data, day)
+for day in range(len(half_day_pairs)):
+    for period, data_range in half_day_pairs[day].items():
+        job_data = {}
+        paras['full'] = False
+        load_new_day(df, day, period)
+        print('total jobs for day {} period {} is {}'.format(day, period, len(job_data)))
+        if (len(job_data) == 0): break
+        half_lab_model(paras, job_data, day, period)
+
 
 df = pd.DataFrame(paras['result'],
                   columns=['case_key', 'client', 'case_stage_rank', 'start', 'end', 'duration', 'ready_time'])
@@ -309,8 +301,9 @@ f = f.groupby(by='case_key').ready_time.min()
 count_dict = {}
 # create a dict of case_key, embedding value count
 for i, v in f.iteritems():
-    print('index: ', i, 'value: ', v)
+    #print('index: ', i, 'value: ', v)
     count_dict[i] = v
+
 
 df['min_ready_time'] = df['case_key']
 df['min_ready_time'] = df["min_ready_time"].map(count_dict)
@@ -319,8 +312,9 @@ df['min_ready_time'] = pd.to_datetime(df['min_ready_time'])
 #df.to_csv('readty.csv', index =False)
 # do stats after warmup and b4 cool down periord, all jobs whose ready time bewteen thewse are considered finished?
 stats_start_ready_date  = '2021-05-18 00:00:00'
-stat_end_ready_date  = '2021-05-19 00:00:00'
+stat_end_ready_date  = '2021-05-20 00:00:00'
 stats_df = df[(df.min_ready_time >= stats_start_ready_date) & (df.min_ready_time < stat_end_ready_date)]
+stats_df = stats_df.sort_values(["case_key", "case_stage_rank"], ascending=(True, True))
 stats_df.to_csv('stats_out.csv', index = False)
 
 
