@@ -29,18 +29,34 @@ day_two = '2021-05-20 00:00:00'
 day_two_mid = '2021-05-20 14:00:00'
 day_three = '2021-05-21 00:00:00'
 day_three_mid = '2021-05-21 14:00:00'
+day_four = '2021-05-21 00:00:00'
+day_four_mid = '2021-05-21 14:00:00'
+day_five = '2021-05-21 00:00:00'
+day_five_mid = '2021-05-21 14:00:00'
 
 morning_str = 'morning'
 lunch_str = 'lunch'
+
+half_day_pairs = []
+for day in range(0,7):
+
+    date = 17 + day
+    next_day = date + 1
+    s = f'2021-05-{date} 00:00:00'
+    s_mid = f'2021-05-{date} 14:00:00'
+    s_next = f'2021-05-{next_day} 00:00:00'
+    value = {}
+    value[morning_str] = (s, s_mid)
+    value[lunch_str] = (s_mid, s_next)
+    half_day_pairs.append(value)
+
+
 
 periods = [morning_str, lunch_str]
 
 day_endings = [day_zero, day_one, day_two, day_three]
 
-half_day_pairs = [{morning_str:(day_start, day_start_mid), lunch_str:(day_start_mid, day_zero)},
-                  {morning_str:(day_zero, day_zero_mid), lunch_str:(day_zero_mid, day_one)},
-                  {morning_str:(day_one, day_one_mid), lunch_str:(day_one_mid, day_two)},
-                  {morning_str:(day_two, day_two_mid), lunch_str:(day_two_mid, day_three)}]
+
 # now change to
 seconds_per_hour = 60 * 60
 day_in_seconds = 24 * 60 * 60

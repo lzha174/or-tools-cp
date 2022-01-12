@@ -16,7 +16,7 @@ job_data = {}  # key by key_idx, inside need to store tasks in order which may h
 
 paras = {
     'unfinished': {},  # unfinished job from befor b4
-    max_job_str: 600 ,
+    max_job_str: 3,
     'days': 5,
     'start': 8,  # start time for non embedding stage
     'end': 21.5,  # end time for non embedding stage,  8pm - 5am
@@ -52,7 +52,7 @@ def examine_case(case_idx, day_index=0):
 
 
 def load_real_data():
-    df = pd.read_csv("5-day.csv")
+    df = pd.read_csv("3-day.csv")
     df['start_timestamp'] = pd.to_datetime(df['start_timestamp'], format='%Y-%m-%d %H:%M:%S')
     df['end_timestamp'] = pd.to_datetime(df['end_timestamp'], format='%Y-%m-%d %H:%M:%S')
     df['work_ready_timestamp'] = pd.to_datetime(df['work_ready_timestamp'], format='%Y-%m-%d %H:%M:%S')
@@ -61,7 +61,7 @@ def load_real_data():
 
     print(df.head(3))
     past_date = pd.to_datetime('17/05/2021 00:00')
-    df['case_priority'].fillna(1)
+
     df['duration'] = df['end_timestamp'] - df["start_timestamp"]
     df['duration_sec'] = df['duration'] / np.timedelta64(1, 's')
 
@@ -74,7 +74,6 @@ def load_real_data():
     # count how many embeeddings for each key
     # first find all rows whose client is embeddings
 
-
     f = df[df.client == 'Embedding']
     f = f.groupby(by='case_key').client.value_counts()
     count_dict = {}
@@ -82,7 +81,6 @@ def load_real_data():
     for i, v in f.iteritems():
         # print('index: ', i[0], 'value: ', v)
         count_dict[i[0]] = v
-        if v>=3: print (f'remove case {i}')
 
     df['embedding_count'] = df['case_key']
     df['embedding_count'] = df["embedding_count"].map(count_dict)
@@ -100,16 +98,7 @@ def load_real_data():
     df["client"] = df["client"].astype("category")
     df["case_priority"] = df["case_priority"].astype("category")
 
-    #df.drop(df[df.duration_sec < 1].index, inplace=True)
-    df.loc[(df.duration_sec < 1), 'duration_sec'] = 1
-
-    temp = df[df.case_key == 'dccd1e14b9e9c6e0217bce756b92e643e500223dfa1bedd2d955c71d0bb6ca5b']
-    print(temp['client'])
-    print(temp['work_ready_timestamp'])
-    print(temp['case_stage_rank'])
-    print(temp['duration_sec'])
-
-
+    df.drop(df[df.duration_sec < 1].index, inplace=True)
     # get first stage ready time, include jobs for today's job
 
     quantile = dict(df.groupby(by='client').duration_sec.quantile(0.95))
@@ -121,7 +110,14 @@ def load_real_data():
 
     # get first day, second day, thrid day starting jobs
 
+    tmp = df[df.case_stage_rank == 1]
 
+    print(tmp["embedding_count"].value_counts())
+    tmp = tmp[tmp.work_ready_timestamp < day_zero].case_key
+    todayJobs = list(tmp.unique())
+    print(todayJobs)
+    print(f'today jobs {len(todayJobs)}')
+    paras[day_zero] = todayJobs
 
     for idx, half_pair in enumerate(half_day_pairs):
         # idx is day index
@@ -130,8 +126,6 @@ def load_real_data():
             tmp = tmp[
                 (tmp.work_ready_timestamp > data_range[0]) & (tmp.work_ready_timestamp < data_range[1])].case_key
             period_jobs = list(tmp.unique())
-            if 'dccd1e14b9e9c6e0217bce756b92e643e500223dfa1bedd2d955c71d0bb6ca5b' in period_jobs:
-                print('fuck')
             paras['day_jobs'][idx, period] = period_jobs
 
 
@@ -182,7 +176,6 @@ def load_real_data():
     print(f'embedding indx {paras[batch_stage_idx_str]}')
     print(f'9 hour indx {paras[nine_hour_priority_idx_str]}')
 
-    print('total null is', df.isna().sum().sum())
     return df
 
 
@@ -207,8 +200,7 @@ def row_process(row, day, period):
     x = paras['day_jobs'].get((day, period), None)
     if x is None: return
     if row.case_key not in paras['day_jobs'][day, period]: return
-    if row.case_key == 'dccd1e14b9e9c6e0217bce756b92e643e500223dfa1bedd2d955c71d0bb6ca5b':
-        print(row.case_key)
+
     # print('name = ', name)
     if len(job_data) == paras[max_job_str]:
         print('job lenth {}'.format(len(job_data)))
@@ -256,8 +248,10 @@ def read():
 
 
 def load_new_day(df, day, period):
+    global job_data
+
     df.apply(row_process, args=(day, period,), axis=1)
-    print(f'new jobs {len(job_data)}')
+
     # add floatted job
     if len(paras['unfinished']) > 0:
         unfinished = paras['unfinished']
@@ -274,107 +268,73 @@ def load_new_day(df, day, period):
 
     print(f'nb jobs {len(job_data)}')
 
-
 df = read()
-def solve():
+
+def sort_jobs(period = morning_str, day_index = 0):
+
+    two_hour_idx = 0
+    six_hour_idx = 1
+
+    # sort jobs in in terms in ready_time of the first task
+    f = sorted(job_data.items(), key=
+    lambda kv: (kv[1][0].ready_time, kv[0]))
+    job_to_do = {}
+    for key in f:
+        print(key[0], key[1])
+        add_this_job = False
+        for task in key[1]:
+            if task.client_idx != paras[batch_stage_idx_str]: continue
+            # find jobs whose embedding can happen at 12pm, the ready time must be before 12pm for the first task in the job
+            if period == morning_str:
+                if task.priority_idx == paras[two_hour_priority_idx_str]:
+                    if task.ready_time < paras['start_emdbedding'][two_hour_idx]  + day_index * day_in_seconds:
+                        add_this_job = True
+                        break
+            else:
+                assert(period == lunch_str)
+                if task.ready_time < paras['start_emdbedding'][six_hour_idx] + day_index * day_in_seconds:
+                # any priority can fit into the night batch
+                    add_this_job = True
+
+        if add_this_job:
+            job_to_do[key[0]] = key[1]
+
+
+    print (f'job to do for {period}')
+    for key, item in job_to_do.items():
+        print(key, item)
+    paras['jobs'] = {}
+    paras['jobs'] = job_to_do
+
+
+def heuristic():
+
+
     global job_data
     for day in range(len(half_day_pairs)):
         for period, data_range in half_day_pairs[day].items():
+            a =0
+            b = lunch_str
             job_data = {}
             paras['full'] = False
-            load_new_day(df, day, period)
-            print('total jobs {} for day {} period {} is {}'.format(data_range, day, period, len(job_data)))
+            load_new_day(df, a, b)
+            print('total jobs for day {} period {} is {}'.format(a, b, len(job_data)))
+
+            sort_jobs(b)
             if (len(job_data) == 0): break
-            half_lab_model(paras, job_data, day, period)
+            break
+        break
+heuristic()
 
-def solve_period():
-    global job_data
+class worker:
+    def
 
-    for day in range(len(half_day_pairs)):
-        if day <2 or day >3: continue
-        for period, data_range in half_day_pairs[day].items():
-            job_data = {}
-            paras['full'] = False
-            load_new_day(df, day, period)
-            print('total jobs {} for day {} period {} is {}'.format(data_range, day, period, len(job_data)))
-            if (len(job_data) == 0): break
-            #half_lab_model(paras, job_data, day, period)
-    exit(1)
 
-solve()
-#solve_period()
+# now try to assign jobs to workers at each stage
+def assign():
+    jobs = paras['jobs']
+    # need to define worker class
 
 
 
-df = pd.DataFrame(paras['result'],
-                  columns=['case_key', 'case_name', 'client', 'case_stage_rank', 'start', 'end', 'duration', 'ready_time'])
-df[["start", "end", "ready_time"]] = df[["start", "end", "ready_time"]].apply(pd.to_datetime)
-df = df.sort_values(["case_key", "case_stage_rank"], ascending=(False, True))
-df.to_csv('out.csv', index=False)
-print(df.head)
 
-finished_case = []
-
-
-def add_finished_stats(row):
-    case_key_index = row.case_key
-    case_stage_rank = row.case_stage_rank
-    if case_max_stages[case_key_index] == case_stage_rank:
-        finished_case.append(case_key_index)
-
-
-f = df[df.case_stage_rank == 1]
-f = f.groupby(by='case_key').ready_time.min()
-
-count_dict = {}
-# create a dict of case_key, embedding value count
-for i, v in f.iteritems():
-    #print('index: ', i, 'value: ', v)
-    count_dict[i] = v
-
-
-df['min_ready_time'] = df['case_key']
-df['min_ready_time'] = df["min_ready_time"].map(count_dict)
-df['min_ready_time'] = pd.to_datetime(df['min_ready_time'])
-
-#df.to_csv('readty.csv', index =False)
-# do stats after warmup and b4 cool down periord, all jobs whose ready time bewteen thewse are considered finished?
-stats_start_ready_date  = '2021-05-18 00:00:00'
-stat_end_ready_date  = '2021-05-21 00:00:00'
-stats_df = df[(df.min_ready_time >= stats_start_ready_date) & (df.min_ready_time < stat_end_ready_date)]
-stats_df = stats_df.sort_values(["case_key", "case_stage_rank"], ascending=(True, True))
-stats_df.to_csv('stats_out.csv', index = False)
-
-
-
-# how to i calculate total in-system time for each case
-# group by case_key, find minimum ready_time, find maximum end_time, difference is the total in system time
-tmp = stats_df[stats_df['client'] == 'Signout']
-tmp.apply(add_finished_stats, axis=1)
-# get case_key
-
-print('finished case', finished_case)
-finished = stats_df[stats_df['case_key'].isin(finished_case)]
-
-# the last stage is signout
-
-ready_time_df = finished.groupby(by='case_key').ready_time.min()
-max_end_time_df = finished.groupby(by='case_key').end.max()
-
-print(max_end_time_df, ready_time_df)
-print(max_end_time_df - ready_time_df)
-
-total_duration_df = pd.DataFrame(max_end_time_df - ready_time_df, columns=['optimised_duration'])
-print('or average',total_duration_df['optimised_duration'].mean())
-
-
-bench_duration = {}
-for key in finished_case:
-    bench_duration[key] = bench_finish_time[key] - bench_ready_time[key]
-bench_duration_df = pd.DataFrame.from_dict(bench_duration, orient='index', columns=['bench_duration'])
-print('bench mean value',bench_duration_df.mean())
-
-
-
-result = pd.concat([total_duration_df, bench_duration_df], axis=1, join='inner')
-result.to_csv('duration_compare.csv')

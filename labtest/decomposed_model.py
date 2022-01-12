@@ -224,6 +224,7 @@ def half_lab_model(paras, job_data, day_index=0, period = morning_str):
         # I want to store unifinished jobs based on day index, only deal with jobs that not finished tmr for next day planning
         unfinished_jobs = {}  # key = day, arrays of first unfinished stage
         unfinshed_job_type = collections.namedtuple('unfinished', 'case_idx, task_idx ready_time')
+        finished_count = 0
         for case, tasks in job_data.items():
             j = case
             floatted_flag = None
@@ -236,7 +237,9 @@ def half_lab_model(paras, job_data, day_index=0, period = morning_str):
                     # floatted_day = solver.Value(start) // day_in_seconds
                     floatted_day = day_index + 1
                     #print(f'folloated_day is  {floatted_day}')
-
+                    # the ready_time is the initial ready time for the very first task,
+                    # this is useful cos we need some kind of memoerizing its actual duration for decomposing
+                    # this ready time will help us define reward properly
                     unfinished = unfinshed_job_type(case_idx=j, task_idx=idx,
                                                         ready_time=task.ready_time)
                     if floatted_day not in unfinished_jobs:
@@ -248,7 +251,8 @@ def half_lab_model(paras, job_data, day_index=0, period = morning_str):
                     break
                 # else this task is finished
 
-
+                if idx == len(tasks) - 1:
+                    finished_count = finished_count + 1
 
                 start_time = format_time(solver.Value(start_job[j, idx]))
                 end_time = format_time(solver.Value(end_job[j, idx]))
@@ -326,3 +330,4 @@ def half_lab_model(paras, job_data, day_index=0, period = morning_str):
             print('Optimal')
 
         write_to_file(logstr)
+        print(f'finish {finished_count}')
