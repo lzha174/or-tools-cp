@@ -49,6 +49,35 @@ for day in range(0,7):
     value[morning_str] = (s, s_mid)
     value[lunch_str] = (s_mid, s_next)
     half_day_pairs.append(value)
+# index is patten index, value is start time and ending time
+
+shift_patterns= {0:('06:00', '10:00'), 1:('10:00', '14:00'), 2:('14:00', '16:00')}
+min_shift_key = min(shift_patterns)
+max_shift_key = max(shift_patterns)
+# key is shift pattern index, value is staffing for each stage during this period
+
+staffing = {0: {0: 3, 1:12, 2:1000, 3:8, 4:4}, 1:{0: 3, 1:12, 2:1000, 3:8, 4:4}, 2:{0: 3, 1:12, 2:1000, 3:8, 4:4}}
+
+data_windows = []
+# create windows for loading data
+for day in range(0,2):
+    day_value = 17 + day
+    data_start_loading = f'2021-05-{day_value}'
+    data_finish_loading = f'2021-05-{day_value}'
+    for key, value in shift_patterns.items():
+        if key == 0:
+            # first shift, load all data from yesterday's last shift time to this shift's end time
+            day_start_value = 16 + day
+            data_start_loading = ' '.join([f'2021-05-{day_start_value}', shift_patterns[max_shift_key][1]])
+            data_end_loading = ' '.join([f'2021-05-{day_value}', value[1]])
+        else:
+            data_start_loading = ' '.join([f'2021-05-{day_value}', shift_patterns[key - 1][1]])
+            data_end_loading = ' '.join([f'2021-05-{day_value}', value[1]])
+        data_windows.append((data_start_loading, data_end_loading))
+
+for data in data_windows:
+    print (f'data windows {data}')
+
 
 
 
