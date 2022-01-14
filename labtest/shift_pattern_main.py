@@ -26,7 +26,7 @@ paras = {
     # start time for category 0 and 1 at stage 2, 12pm, and 6 pm
     'duration_2': [2 * seconds_per_hour, 9 * seconds_per_hour],  # duration for category 0 and 1 at embedding in seconds
 
-    'max_serach_time_sec': 480,
+    'max_serach_time_sec': 60,
     'capacity': {0: 3, 1: 12, 2: 1000, 3: 8, 4: 4},
     job_weights_str: {},
     'result': [],

@@ -27,7 +27,7 @@ def shift_model(paras, job_data, day_index=0, period = 0):
     maxDuration = 9 * seconds_per_hour
 
     two_hour_idx = 0
-    six_hour_idx = 1
+    nine_hour_idx = 1
 
     # start and end time is based on shift patterns now
     starts_time = shift_patterns[period].start * seconds_per_hour + day_index  * day_in_seconds
@@ -35,12 +35,9 @@ def shift_model(paras, job_data, day_index=0, period = 0):
     format_start = format_time(starts_time)
     format_end = format_time(ends_time)
     # if shift start before 12am, if so, no need to sceduling 9hour embedding at this tage
-    isBeforeMidDayBatch = shift_patterns[period].start * seconds_per_hour <= 12 * seconds_per_hour
+    onlySchedulingLunchBatch = shift_patterns[period].start * seconds_per_hour < 12 * seconds_per_hour and shift_patterns[period].end * seconds_per_hour < 12 * seconds_per_hour
     capacity = staffing[period]
-    if isBeforeMidDayBatch:
-        capacity[2] = capacity[2] - paras['lunch_used_embeddings']
-    else:
-        capacity[2] = capacity[2] - paras['night_used_embeddings']
+
 
     print(f'starting times are {starts_time}' + ' ' + format_start)
     print(f'ending times are {ends_time}'+ ' ' + format_end)
@@ -73,14 +70,34 @@ def shift_model(paras, job_data, day_index=0, period = 0):
         for idx, task in enumerate(tasks):
             stage = task.client_idx
             client = paras[idx_to_name_client_str][stage]
+            task_start_time_lb = starts_time
             if client in paras['95_quantile']:
-                minDuration = 1
-                maxDuration = int(paras['95_quantile'][client]) + 1
-                horizon = ends_time
+
+                minDuration = task.duration
+                maxDuration = task.duration
+                task_start_time_lb = starts_time
+                task_end_time_lb = starts_time + task.duration
+                start_horizon = ends_time
+                end_horizon = ends_time
             else:
-                minDuration = 7200
-                maxDuration = 32400
-                horizon = ends_time + maxDuration
+                task_start_time_lb = paras['start_emdbedding'][two_hour_idx] + day_index * day_in_seconds
+
+                if onlySchedulingLunchBatch:
+                    minDuration = 7200
+                    maxDuration = 7200
+                    # must start at 12pm today
+
+                else:
+                    # can be lunch or night batch
+                    minDuration = 7200
+                    maxDuration = 32400
+                # for batching ,start time and end time is fixed
+                task_end_time_lb = task_start_time_lb + minDuration
+                # latest starting time is 8pm today
+                start_horizon = paras['start_emdbedding'][nine_hour_idx] + day_index * day_in_seconds
+                # latest finish time is 5am next day
+                end_horizon = paras['start_emdbedding'][nine_hour_idx]  + maxDuration + day_index * day_in_seconds
+
             #print(f'horizon {horizon}')
             priority = task.priority_idx
             duration_time = task.duration
@@ -88,7 +105,7 @@ def shift_model(paras, job_data, day_index=0, period = 0):
             # note: for now i will ignore capacity used for embedding as it has a lot. i can remember them reduce capacity tho coz they happen at the same time
 
             if (stage == paras[batch_stage_idx_str]):
-                if priority == paras[nine_hour_priority_idx_str] and isBeforeMidDayBatch:
+                if priority == paras[nine_hour_priority_idx_str] and onlySchedulingLunchBatch:
                     # evening job cannot happen at lunch
                     # no need to scheduling this embedding in the morning period
                     last_end[j] = previous_end
@@ -97,11 +114,11 @@ def shift_model(paras, job_data, day_index=0, period = 0):
             last_added_idx[j] = idx
             suffix = f'job {j} task {stage}'
 
-            start = model.NewIntVar(starts_time, horizon, 'start ' + suffix)
+            start = model.NewIntVar(task_start_time_lb, start_horizon, 'start ' + suffix)
 
             duration = model.NewIntVar(minDuration, maxDuration, 'duration' + suffix)
 
-            end = model.NewIntVar(starts_time, horizon, 'end ' + suffix)
+            end = model.NewIntVar(task_end_time_lb, end_horizon, 'end ' + suffix)
 
             l_presence = model.NewBoolVar('present '+ suffix)
 
@@ -129,8 +146,11 @@ def shift_model(paras, job_data, day_index=0, period = 0):
 
             previous_end = end
             previous_l = l_presence
-            #model.Add(start + duration == end).OnlyEnforceIf(l_presence)
+            model.Add(start + duration == end).OnlyEnforceIf(l_presence)
 
+
+            # for batch job, i can create two optional jobs, one for lunch one for nite, only no more than 1 can be done
+            # this is a big job
 
             task_interval = model.NewOptionalIntervalVar(start, duration, end, l_presence, 'interval' +  suffix)
 
@@ -142,23 +162,28 @@ def shift_model(paras, job_data, day_index=0, period = 0):
 
             # add constraint for duration for embedding
             if stage == paras[batch_stage_idx_str]:
+                start_lunch_batch_time = paras['start_emdbedding'][two_hour_idx] + day_index * day_in_seconds
+                start_night_batch_time = paras['start_emdbedding'][nine_hour_idx] + day_index * day_in_seconds
 
-                if isBeforeMidDayBatch:
-                    model.Add(duration == paras['duration_2'][two_hour_idx]).OnlyEnforceIf(l_presence)
-                    # starting time is at noon
+                l_lunch_batch = model.NewBoolVar('lunch ' + suffix)
+                model.Add(duration == paras['duration_2'][two_hour_idx]).OnlyEnforceIf([l_presence, l_lunch_batch])
+                model.Add(duration == paras['duration_2'][nine_hour_idx]).OnlyEnforceIf([l_presence, l_lunch_batch.Not()])
+                if onlySchedulingLunchBatch:
+                    # only scheduling to lunch batch, dont worry about night batch yet
 
-                    start_batch_time = paras['start_emdbedding'][two_hour_idx] +  day_index * day_in_seconds
+
+                    model.Add(start == start_lunch_batch_time).OnlyEnforceIf([l_presence, l_lunch_batch])
+                    model.Add(l_lunch_batch == 1)
                     #print(f'start lunch time is  {start_batch_time}')
                     #print('duration is ',paras['duration_2'][two_hour_idx] )
                 else:
-                    # evening batch
-                    model.Add(duration == paras['duration_2'][six_hour_idx]).OnlyEnforceIf(l_presence)
-                    start_batch_time = paras['start_emdbedding'][six_hour_idx] +  day_index * day_in_seconds
+                    # may be in lunch batch or night batch
+
                     #print(f'start evening time is  {start_batch_time}')
                     #print('duration is ', paras['duration_2'][six_hour_idx])
                     #model.Add(l_presence == 1)
-
-                model.Add(start == start_batch_time).OnlyEnforceIf(l_presence)
+                    model.Add(start == start_lunch_batch_time).OnlyEnforceIf([l_presence, l_lunch_batch])
+                    model.Add(start == start_night_batch_time).OnlyEnforceIf([l_presence, l_lunch_batch.Not()])
 
 
             else:
@@ -297,11 +322,12 @@ def shift_model(paras, job_data, day_index=0, period = 0):
                                                                                                  new_ready_time)
                     if t==paras[batch_stage_idx_str]:
                         # need to remove used embedding for today
-                        if solver.Value(durations[j, idx]) == maxDuration:
+                        print('duration is ', solver.Value(durations[j, idx]) )
+                        if solver.Value(durations[j, idx]) == paras['duration_2'][nine_hour_idx]:
                             paras['night_used_embeddings'] = paras['night_used_embeddings'] + 1
                         else:
                             # lunchy embedding
-                            paras['lunch_used_embeddings'] = paras['night_used_embeddings'] + 1
+                            paras['lunch_used_embeddings'] = paras['lunch_used_embeddings'] + 1
                     logstr.append(l_str)
                     paras['result'].append(finished_data)
                     # a batch task finish after mid nite is also considered finished
@@ -355,3 +381,5 @@ def shift_model(paras, job_data, day_index=0, period = 0):
 
         write_to_file(logstr)
         print(f'finish {finished_count}')
+        print('night used {i}'.format(i=paras['night_used_embeddings']))
+        print('lunch used {i}'.format(i=paras['lunch_used_embeddings']))

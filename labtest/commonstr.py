@@ -52,9 +52,9 @@ for day in range(0,7):
     half_day_pairs.append(value)
 # index is patten index, value is start time and ending time
 shift_pattern_type = collections.namedtuple('shift', 'start start_str end end_str')
-shift_patterns = {0:shift_pattern_type(start=6, start_str='08:00', end=10, end_str='12:00'), 1: shift_pattern_type(start=10, start_str='12:00',
-                                                                                                                   end=14, end_str='16:00'),
-                  2:shift_pattern_type(start=14, start_str='16:00', end=16, end_str='18:00' )}
+shift_patterns = {0:shift_pattern_type(start=8, start_str='08:00', end=12, end_str='12:00'), 1: shift_pattern_type(start=12, start_str='12:00',
+                                                                                                                   end=16, end_str='16:00'),
+                  2:shift_pattern_type(start=16, start_str='16:00', end=18, end_str='18:00' )}
 
 min_shift_key = min(shift_patterns)
 max_shift_key = max(shift_patterns)
