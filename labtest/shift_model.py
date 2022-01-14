@@ -37,6 +37,13 @@ def shift_model(paras, job_data, day_index=0, period = 0):
     # if shift start before 12am, if so, no need to sceduling 9hour embedding at this tage
     onlySchedulingLunchBatch = shift_patterns[period].start * seconds_per_hour < 12 * seconds_per_hour and shift_patterns[period].end * seconds_per_hour < 12 * seconds_per_hour
     capacity = staffing[period]
+    night_batch_capacity = capacity[paras[batch_stage_idx_str]]
+
+    if onlySchedulingLunchBatch:
+        capacity[paras[batch_stage_idx_str]] = capacity[paras[batch_stage_idx_str]] - paras['lunch_used_embeddings']
+    else:
+        night_batch_capacity = night_batch_capacity - paras['night_used_embeddings']
+
 
 
     print(f'starting times are {starts_time}' + ' ' + format_start)
@@ -60,7 +67,8 @@ def shift_model(paras, job_data, day_index=0, period = 0):
     first_start = {}
     last_end = {}
     l_presences = {}
-
+    l_night_presences = {}
+    night_batches = []
     first_task_ready_times = {}
     last_added_idx = {}
     for case, tasks in job_data.items():
@@ -152,7 +160,15 @@ def shift_model(paras, job_data, day_index=0, period = 0):
             # for batch job, i can create two optional jobs, one for lunch one for nite, only no more than 1 can be done
             # this is a big job
 
-            task_interval = model.NewOptionalIntervalVar(start, duration, end, l_presence, 'interval' +  suffix)
+            task_interval = model.NewOptionalIntervalVar(start, duration, end, l_presence, 'interval' + suffix)
+            if stage == paras[batch_stage_idx_str] and onlySchedulingLunchBatch == False:
+                # add another optional inverval
+                l_night = model.NewBoolVar('night present '+ suffix)
+                night_interval = model.NewOptionalIntervalVar(start, duration, end, l_night, 'interval' + suffix)
+                night_batches.append(night_interval)
+                l_night_presences[j,idx] = l_night
+                model.Add(l_presence + l_night <= 1)
+                model.Add(start + duration == end).OnlyEnforceIf(l_night)
 
             # put the interval into correct stage, a job can have duplicate tasks at the same stage such as signing out
             if stage not in stage_tasks:
@@ -165,25 +181,32 @@ def shift_model(paras, job_data, day_index=0, period = 0):
                 start_lunch_batch_time = paras['start_emdbedding'][two_hour_idx] + day_index * day_in_seconds
                 start_night_batch_time = paras['start_emdbedding'][nine_hour_idx] + day_index * day_in_seconds
 
-                l_lunch_batch = model.NewBoolVar('lunch ' + suffix)
-                model.Add(duration == paras['duration_2'][two_hour_idx]).OnlyEnforceIf([l_presence, l_lunch_batch])
-                model.Add(duration == paras['duration_2'][nine_hour_idx]).OnlyEnforceIf([l_presence, l_lunch_batch.Not()])
+                # l_presence really means l_lunch_presence
+                l_lunch_presence = l_presence
+                model.Add(duration == paras['duration_2'][two_hour_idx]).OnlyEnforceIf(l_lunch_presence)
+                model.Add(start == start_lunch_batch_time).OnlyEnforceIf(l_lunch_presence)
+
+                if priority == paras[nine_hour_priority_idx_str]:
+                    model.Add(l_lunch_presence == 0)
                 if onlySchedulingLunchBatch:
                     # only scheduling to lunch batch, dont worry about night batch yet
+                    # if we have a 9 hour task, cant put it into lunch batch
 
 
-                    model.Add(start == start_lunch_batch_time).OnlyEnforceIf([l_presence, l_lunch_batch])
-                    model.Add(l_lunch_batch == 1)
+                    model.Add(start == start_lunch_batch_time).OnlyEnforceIf(l_lunch_presence)
+                    #model.Add(l_presence == 0)
                     #print(f'start lunch time is  {start_batch_time}')
                     #print('duration is ',paras['duration_2'][two_hour_idx] )
                 else:
                     # may be in lunch batch or night batch
 
+                    l_night_batch = l_night_presences[j, idx]
                     #print(f'start evening time is  {start_batch_time}')
                     #print('duration is ', paras['duration_2'][six_hour_idx])
                     #model.Add(l_presence == 1)
-                    model.Add(start == start_lunch_batch_time).OnlyEnforceIf([l_presence, l_lunch_batch])
-                    model.Add(start == start_night_batch_time).OnlyEnforceIf([l_presence, l_lunch_batch.Not()])
+                    model.Add(duration == paras['duration_2'][nine_hour_idx]).OnlyEnforceIf(l_night_batch)
+                    model.Add(start == start_night_batch_time).OnlyEnforceIf(l_night_batch)
+
 
 
             else:
@@ -203,7 +226,8 @@ def shift_model(paras, job_data, day_index=0, period = 0):
         # capacity is 2, means two tasks can overlap, as we have two machines
         # stage 2 has 1000 machines, ha
         model.AddCumulative(stage_tasks[stage], [1] * len(stage_tasks[stage]), capacity[stage])
-
+    if len(night_batches) > 0:
+        model.AddCumulative(night_batches, [1] * len(night_batches), night_batch_capacity)
     # lets start with object to be makespan
 
     # print(f'starts {start_job}')
@@ -231,8 +255,20 @@ def shift_model(paras, job_data, day_index=0, period = 0):
                 # how to make reward big when end time - first start time is small, means finis early
                 # 1/100, 1/500 some kind of inverse function
                 reward_for_this_task = model.NewIntVar(0, day_in_seconds * 4, 'total duration {} {}'.format(j, idx))
-                model.Add(reward_for_this_task== day_in_seconds * 4- (end_job[j, idx] - first_task_ready_times[j])).OnlyEnforceIf(l_presences[j, idx])
-                model.Add(reward_for_this_task == 0).OnlyEnforceIf(l_presences[j, idx].Not())
+                if tasks[idx].client_idx == paras[batch_stage_idx_str]:
+                    if onlySchedulingLunchBatch:
+                        model.Add(reward_for_this_task == day_in_seconds * 4 - (
+                                end_job[j, idx] - first_task_ready_times[j])).OnlyEnforceIf(l_presences[j, idx])
+                        model.Add(reward_for_this_task == 0).OnlyEnforceIf(l_presences[j, idx].Not())
+                    if onlySchedulingLunchBatch == False:
+                        model.Add(reward_for_this_task == day_in_seconds * 4 - (
+                            end_job[j, idx] - first_task_ready_times[j])).OnlyEnforceIf(l_night_presences[j, idx])
+                        model.Add(reward_for_this_task == 0).OnlyEnforceIf([l_presences[j, idx].Not(), l_night_presences[j, idx].Not()])
+
+                else:
+
+                    model.Add(reward_for_this_task== day_in_seconds * 4- (end_job[j, idx] - first_task_ready_times[j])).OnlyEnforceIf(l_presences[j, idx])
+                    model.Add(reward_for_this_task == 0).OnlyEnforceIf(l_presences[j, idx].Not())
                 case_durations.append(reward_for_this_task)
 
         model.Maximize(sum(case for case in case_durations))
@@ -269,7 +305,24 @@ def shift_model(paras, job_data, day_index=0, period = 0):
                 t = task.client_idx
                 task_name = paras[idx_to_name_client_str][t]
                 l_presence = l_presences.get((j, idx), None)
-                if l_presence  is None or solver.Value(l_presence) == False:
+
+                unfinished_flag = False
+                if t != paras[batch_stage_idx_str]:
+                    unfinished_flag = l_presence  is None or solver.Value(l_presence) == False
+                else:
+                    if onlySchedulingLunchBatch:
+                        unfinished_flag = l_presence is None or solver.Value(l_presence) == False
+                    else:
+                        # a task can be 2 hour or 9 hour task, can happen at lunch or night
+                        # this job is always a candidate for night shift, it should always being considered
+                        l_night_presence = l_night_presences.get((j, idx), None)
+                        #assert(l_night_presence)
+                        # this job is not done if not considered, or not happened at lunch
+                        # and not happened at night
+                        unfinished_flag = l_presence is None  or solver.Value(l_presence) == False
+                        unfinished_flag = unfinished_flag and  solver.Value(l_night_presence) == False
+
+                if unfinished_flag:
                     # this task is the first unfinished task
                     # floatted_day = solver.Value(start) // day_in_seconds
                     floatted_day = day_index + 1

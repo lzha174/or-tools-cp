@@ -18,7 +18,7 @@ paras = {
     'lunch_used_embeddings': 0,
     'night_used_embeddings': 0,
     'unfinished': {},  # unfinished job from befor b4
-    max_job_str: 500 ,
+    max_job_str: 4 ,
     'days': 5,
     'start': 8,  # start time for non embedding stage
     'end': 21.5,  # end time for non embedding stage,  8pm - 5am
