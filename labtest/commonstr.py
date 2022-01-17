@@ -53,18 +53,18 @@ for day in range(0,7):
 # index is patten index, value is start time and ending time
 shift_pattern_type = collections.namedtuple('shift', 'start start_str end end_str')
 shift_patterns = {0:shift_pattern_type(start=8, start_str='08:00', end=12, end_str='12:00'), 1: shift_pattern_type(start=12, start_str='12:00',
-                                                                                                                   end=16, end_str='16:00'),
-                  2:shift_pattern_type(start=16, start_str='16:00', end=18, end_str='18:00' )}
+                                                                                                                   end=14, end_str='14:00'),
+                  2:shift_pattern_type(start=14, start_str='14:00', end=20, end_str='20:00' )}
 
 min_shift_key = min(shift_patterns)
 max_shift_key = max(shift_patterns)
 # key is shift pattern index, value is staffing for each stage during this period
 
-staffing = {0: {0: 3, 1:12, 2:1000, 3:8, 4:4}, 1:{0: 2, 1:12, 2:1000, 3:4, 4:5}, 2:{0: 8, 1:14, 2:1000, 3:12, 4:10}}
+staffing = {0: {0: 13, 1:12, 2:1000, 3:18, 4:14}, 1:{0: 12, 1:12, 2:1000, 3:14, 4:5}, 2:{0: 18, 1:14, 2:1000, 3:12, 4:10}}
 
 # create windows for loading data
 day_data_windows = {} # index by day, save array of data windows
-for day in range(0,5):
+for day in range(0,7):
     day_value = 17 + day
     data_start_loading = f'2021-05-{day_value}'
     data_finish_loading = f'2021-05-{day_value}'

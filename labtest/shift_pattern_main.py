@@ -18,7 +18,7 @@ paras = {
     'lunch_used_embeddings': 0,
     'night_used_embeddings': 0,
     'unfinished': {},  # unfinished job from befor b4
-    max_job_str: 4 ,
+    max_job_str: 500 ,
     'days': 5,
     'start': 8,  # start time for non embedding stage
     'end': 21.5,  # end time for non embedding stage,  8pm - 5am
@@ -91,7 +91,7 @@ def load_real_data():
 
     # most embedding has no mor ethen 2 repeats, remove 4 3-time embeddings and 1 5-times embeddings
     # only consider embedding less than 3 for now
-    df = df[df['embedding_count'] < 3]
+    df.drop(df[df['embedding_count'] >= 3].index, inplace=True)
 
     print(df["case_key"].head(2))
     print(df.groupby(by='client').duration_sec.quantile(0.75))
@@ -99,8 +99,8 @@ def load_real_data():
 
     # todo , only take 75% quantile duration cases
 
-    df["client"] = df["client"].astype("category")
-    df["case_priority"] = df["case_priority"].astype("category")
+    #df["client"] = df["client"].astype("category")
+    #df["case_priority"] = df["case_priority"].astype("category")
 
     #df.drop(df[df.duration_sec < 1].index, inplace=True)
     df.loc[(df.duration_sec < 1), 'duration_sec'] = 1
@@ -200,14 +200,34 @@ def load_real_data():
     print(f'9 hour indx {paras[nine_hour_priority_idx_str]}')
 
     print('total null is', df.isna().sum().sum())
+
+    # i want to remove cases whose signout is not included in the data
+    # first find the last stage client
+    f = dict(df.groupby('case_key').case_stage_rank.max())
+    # find max value row index?
+    print(f)
+    df['remove_unfinished'] = False
+    for key, value in f.items():
+        # find each subframe
+        temp = df[df.case_key == key]
+        temp = temp[temp.case_stage_rank == value].client.tolist()
+        #print(temp)
+        if 'Signout' not in temp:
+            df.loc[df.case_key==key, 'remove_unfinished'] = True
+            print(f'remove unfinished case {key}')
+    df.drop(df[df.remove_unfinished == True].index, inplace=True)
+    df.to_csv('filtered_data.csv', index=False)
     return df
 
 
 case_max_stages = {}
+last_client = {}
 
 bench_ready_time = {}
 bench_finish_time = {}
 min_ready_times = {}
+
+
 
 def row_process(row, day, period):
     global addedjob
@@ -216,7 +236,7 @@ def row_process(row, day, period):
     # for each row, need to put task into a map structure for each case key
 
     # an array of (client idx, duration)
-
+    #if row.remove_unfinished == True: return
     case_key_idx = paras[name_to_idx_key_str][row.case_key]
 
     if paras['full'] == True:

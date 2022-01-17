@@ -30,8 +30,8 @@ def shift_model(paras, job_data, day_index=0, period = 0):
     nine_hour_idx = 1
 
     # start and end time is based on shift patterns now
-    starts_time = shift_patterns[period].start * seconds_per_hour + day_index  * day_in_seconds
-    ends_time =  shift_patterns[period].end * seconds_per_hour + day_index  * day_in_seconds
+    starts_time = int(shift_patterns[period].start * seconds_per_hour + day_index  * day_in_seconds)
+    ends_time =  int(shift_patterns[period].end * seconds_per_hour + day_index  * day_in_seconds)
     format_start = format_time(starts_time)
     format_end = format_time(ends_time)
     # if shift start before 12am, if so, no need to sceduling 9hour embedding at this tage
@@ -48,7 +48,7 @@ def shift_model(paras, job_data, day_index=0, period = 0):
 
     print(f'starting times are {starts_time}' + ' ' + format_start)
     print(f'ending times are {ends_time}'+ ' ' + format_end)
-    print(f'capacity is {capacity}')
+    print(f'capacity is {capacity} night is {night_batch_capacity}')
 
 
     model = cp_model.CpModel()
@@ -83,7 +83,7 @@ def shift_model(paras, job_data, day_index=0, period = 0):
 
                 minDuration = task.duration
                 maxDuration = task.duration
-                task_start_time_lb = starts_time
+
                 task_end_time_lb = starts_time + task.duration
                 start_horizon = ends_time
                 end_horizon = ends_time
@@ -152,8 +152,7 @@ def shift_model(paras, job_data, day_index=0, period = 0):
                 # this task can only happen if previous task is performed
                 model.Add(l_presence <= previous_l)
 
-            previous_end = end
-            previous_l = l_presence
+
             model.Add(start + duration == end).OnlyEnforceIf(l_presence)
 
 
@@ -162,6 +161,7 @@ def shift_model(paras, job_data, day_index=0, period = 0):
 
             task_interval = model.NewOptionalIntervalVar(start, duration, end, l_presence, 'interval' + suffix)
             if stage == paras[batch_stage_idx_str] and onlySchedulingLunchBatch == False:
+                # if we consider scheduling night batch, add a new optional task for night
                 # add another optional inverval
                 l_night = model.NewBoolVar('night present '+ suffix)
                 night_interval = model.NewOptionalIntervalVar(start, duration, end, l_night, 'interval' + suffix)
@@ -169,6 +169,10 @@ def shift_model(paras, job_data, day_index=0, period = 0):
                 l_night_presences[j,idx] = l_night
                 model.Add(l_presence + l_night <= 1)
                 model.Add(start + duration == end).OnlyEnforceIf(l_night)
+                if previous_end is not None:
+                    model.Add(start >= previous_end).OnlyEnforceIf(l_night)
+                    # this task can only happen if previous task is performed
+                    model.Add(l_night <= previous_l)
 
             # put the interval into correct stage, a job can have duplicate tasks at the same stage such as signing out
             if stage not in stage_tasks:
@@ -185,20 +189,15 @@ def shift_model(paras, job_data, day_index=0, period = 0):
                 l_lunch_presence = l_presence
                 model.Add(duration == paras['duration_2'][two_hour_idx]).OnlyEnforceIf(l_lunch_presence)
                 model.Add(start == start_lunch_batch_time).OnlyEnforceIf(l_lunch_presence)
-
+                # 9 hour can never fit into lunch batch
                 if priority == paras[nine_hour_priority_idx_str]:
                     model.Add(l_lunch_presence == 0)
-                if onlySchedulingLunchBatch:
-                    # only scheduling to lunch batch, dont worry about night batch yet
-                    # if we have a 9 hour task, cant put it into lunch batch
+
+                if onlySchedulingLunchBatch == False:
 
 
-                    model.Add(start == start_lunch_batch_time).OnlyEnforceIf(l_lunch_presence)
-                    #model.Add(l_presence == 0)
-                    #print(f'start lunch time is  {start_batch_time}')
-                    #print('duration is ',paras['duration_2'][two_hour_idx] )
-                else:
                     # may be in lunch batch or night batch
+                    # we know we have a night optional batch
 
                     l_night_batch = l_night_presences[j, idx]
                     #print(f'start evening time is  {start_batch_time}')
@@ -210,13 +209,16 @@ def shift_model(paras, job_data, day_index=0, period = 0):
 
 
             else:
+                a = 1
                 # for all non embedding tasks, follow the duration int he data for now
-                model.Add(duration == duration_time)
+                #model.Add(duration == duration_time)
                 # for all tasks except embedding, add constraint that end time before shift over at 6pm, start time after 8am for every task on the same day
 
                 #model.Add(start >= starts_time).OnlyEnforceIf(l_presence)
                 #model.Add(end <= ends_time).OnlyEnforceIf(l_presence)
 
+            previous_end = end
+            previous_l = l_presence
 
     # add capacity constraint for stage 0
     # here the machine capacity 1 means for each machine, it can only perform one job at the same time
@@ -244,7 +246,7 @@ def shift_model(paras, job_data, day_index=0, period = 0):
         model.Maximize(sum(l_p * paras[job_weights_str][key[0]] for key, l_p in l_presences.items()))
     if objective_choice == 'minimise_total_case_duration':
         max_durations = {}
-        case_durations = []
+        task_reward = []
         for case, tasks in job_data.items():
             j = case
             max_durations[j] = []
@@ -269,9 +271,9 @@ def shift_model(paras, job_data, day_index=0, period = 0):
 
                     model.Add(reward_for_this_task== day_in_seconds * 4- (end_job[j, idx] - first_task_ready_times[j])).OnlyEnforceIf(l_presences[j, idx])
                     model.Add(reward_for_this_task == 0).OnlyEnforceIf(l_presences[j, idx].Not())
-                case_durations.append(reward_for_this_task)
+                task_reward.append(reward_for_this_task)
 
-        model.Maximize(sum(case for case in case_durations))
+        model.Maximize(sum(case for case in task_reward))
     solver = cp_model.CpSolver()
     solver.parameters.max_time_in_seconds = paras['max_serach_time_sec']
     status = solver.Solve(model)
@@ -282,7 +284,7 @@ def shift_model(paras, job_data, day_index=0, period = 0):
         # need to output all start and end time for each job at each stage
 
         print(status)
-        case_durations = []
+        task_reward = []
         formatted_start_time = {}  # indexed by job id and task id
         formatted_end_time = {}
         formatted_durations = {}
