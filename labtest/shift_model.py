@@ -285,6 +285,7 @@ def shift_model(paras, job_data, day_index=0, period = 0):
     print('solver', status, cp_model.INFEASIBLE, cp_model.FEASIBLE)
     solver_output = [f'day {day_index} period {period} status = {status}\n']
     write_to_file('solver.txt', solver_output)
+    assert(status != cp_model.UNKNOWN)
     # Print solution.
     if status == cp_model.FEASIBLE or status == cp_model.OPTIMAL:
 

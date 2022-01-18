@@ -511,8 +511,9 @@ def change_staffing():
         solve()
         record_result()
 
+
 change_staffing()
 
 
 
-write_to_file(logstr)
+#write_to_file(logstr)
