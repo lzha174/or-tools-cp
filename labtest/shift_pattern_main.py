@@ -63,7 +63,7 @@ def load_real_data():
 
     print(df.head(3))
     past_date = pd.to_datetime('17/05/2021 00:00')
-    df['case_priority'].fillna(1)
+    df['case_priority'].fillna(1, inplace=True)
     df['duration'] = df['end_timestamp'] - df["start_timestamp"]
     df['duration_sec'] = df['duration'] / np.timedelta64(1, 's')
 
@@ -77,6 +77,26 @@ def load_real_data():
     # first find all rows whose client is embeddings
 
 
+
+
+    df['remove_unfinished'] = False
+
+    # i want to remove cases whose signout is not included in the data
+    # first find the last stage client
+    f = dict(df.groupby('case_key').case_stage_rank.max())
+    # find max value row index?
+    #print(f)
+
+    for key, value in f.items():
+        # find each subframe
+        temp = df[df.case_key == key]
+        temp = temp[temp.case_stage_rank == value].client.tolist()
+        #print(temp)
+        if 'Signout' not in temp:
+            df.loc[df.case_key==key, 'remove_unfinished'] = True
+            #print(f'remove unfinished case {key}')
+    df.drop(df[df.remove_unfinished == True].index, inplace=True)
+
     f = df[df.client == 'Embedding']
     f = f.groupby(by='case_key').client.value_counts()
     count_dict = {}
@@ -84,7 +104,7 @@ def load_real_data():
     for i, v in f.iteritems():
         # print('index: ', i[0], 'value: ', v)
         count_dict[i[0]] = v
-        if v>=3: print (f'remove case {i}')
+        #if v>=3: print (f'remove case {i}')
 
     df['embedding_count'] = df['case_key']
     df['embedding_count'] = df["embedding_count"].map(count_dict)
@@ -92,6 +112,8 @@ def load_real_data():
     # most embedding has no mor ethen 2 repeats, remove 4 3-time embeddings and 1 5-times embeddings
     # only consider embedding less than 3 for now
     df.drop(df[df['embedding_count'] >= 3].index, inplace=True)
+
+    df.to_csv('filtered_data.csv', index=False)
 
     print(df["case_key"].head(2))
     print(df.groupby(by='client').duration_sec.quantile(0.75))
@@ -104,12 +126,6 @@ def load_real_data():
 
     #df.drop(df[df.duration_sec < 1].index, inplace=True)
     df.loc[(df.duration_sec < 1), 'duration_sec'] = 1
-
-    temp = df[df.case_key == 'dccd1e14b9e9c6e0217bce756b92e643e500223dfa1bedd2d955c71d0bb6ca5b']
-    print(temp['client'])
-    print(temp['work_ready_timestamp'])
-    print(temp['case_stage_rank'])
-    print(temp['duration_sec'])
 
 
     # get first stage ready time, include jobs for today's job
@@ -137,8 +153,7 @@ def load_real_data():
     # get ready_time for the first stage
     min_ready_time_series = dict(tmp.groupby(by='case_key').ready_time_sec.min())
     paras['min_ready_time_series'] = min_ready_time_series
-    for i, v in min_ready_time_series.items():
-        print (f'case {i} min ready_time is {v}' + ' ' + format_time(v))
+
 
     for idx, half_pair in enumerate(half_day_pairs):
         # idx is day index
@@ -147,15 +162,8 @@ def load_real_data():
             tmp = tmp[
                 (tmp.work_ready_timestamp > data_range[0]) & (tmp.work_ready_timestamp < data_range[1])].case_key
             period_jobs = list(tmp.unique())
-            if 'dccd1e14b9e9c6e0217bce756b92e643e500223dfa1bedd2d955c71d0bb6ca5b' in period_jobs:
-                print('fuck')
+
             paras['day_jobs'][idx, period] = period_jobs
-
-
-
-
-
-
 
     print(df.groupby(by=['client'])['duration_sec'].describe())
     print(df['duration_sec'].min())
@@ -199,24 +207,12 @@ def load_real_data():
     print(f'embedding indx {paras[batch_stage_idx_str]}')
     print(f'9 hour indx {paras[nine_hour_priority_idx_str]}')
 
-    print('total null is', df.isna().sum().sum())
-
-    # i want to remove cases whose signout is not included in the data
-    # first find the last stage client
-    f = dict(df.groupby('case_key').case_stage_rank.max())
-    # find max value row index?
+    print('total null is', df.isna().sum())
+    f = df[df['embedding_count'].isna()].case_key.unique()
     print(f)
-    df['remove_unfinished'] = False
-    for key, value in f.items():
-        # find each subframe
-        temp = df[df.case_key == key]
-        temp = temp[temp.case_stage_rank == value].client.tolist()
-        #print(temp)
-        if 'Signout' not in temp:
-            df.loc[df.case_key==key, 'remove_unfinished'] = True
-            print(f'remove unfinished case {key}')
-    df.drop(df[df.remove_unfinished == True].index, inplace=True)
-    df.to_csv('filtered_data.csv', index=False)
+
+
+
     return df
 
 
@@ -237,7 +233,6 @@ def row_process(row, day, period):
 
     # an array of (client idx, duration)
     #if row.remove_unfinished == True: return
-    case_key_idx = paras[name_to_idx_key_str][row.case_key]
 
     if paras['full'] == True:
         return
@@ -253,6 +248,7 @@ def row_process(row, day, period):
         del job_data[paras['last_inserted_case']]
         paras['full'] = True
         return
+    case_key_idx = paras[name_to_idx_key_str][row.case_key]
 
     if case_key_idx not in job_data:
         job_data[case_key_idx] = []
@@ -346,81 +342,177 @@ def solve_period():
             shift_model(paras, job_data, day, idx)
     exit(1)
 
-solve()
-#solve_period()
 
-
-
-df = pd.DataFrame(paras['result'],
-                  columns=['case_key', 'case_name', 'client', 'case_stage_rank', 'start', 'end', 'duration', 'ready_time'])
-df[["start", "end", "ready_time"]] = df[["start", "end", "ready_time"]].apply(pd.to_datetime)
-df = df.sort_values(["case_key", "case_stage_rank"], ascending=(False, True))
-df.to_csv('out.csv', index=False)
-print(df.head)
-
-finished_case = []
-
-
-def add_finished_stats(row):
+def add_finished_stats(row, finished_case):
     case_key_index = row.case_key
     case_stage_rank = row.case_stage_rank
     if case_max_stages[case_key_index] == case_stage_rank:
         finished_case.append(case_key_index)
 
+logstr = []
 
-f = df[df.case_stage_rank == 1]
-f = f.groupby(by='case_key').ready_time.min()
+def record_result():
+    result_df = pd.DataFrame(paras['result'],
+                             columns=['case_key', 'case_name', 'client', 'case_stage_rank', 'start', 'end',
+                                      'duration', 'ready_time'])
+    result_df[["start", "end", "ready_time"]] = result_df[["start", "end", "ready_time"]].apply(pd.to_datetime)
+    result_df = result_df.sort_values(["case_key", "case_stage_rank"], ascending=(False, True))
+    result_df.to_csv('out.csv', index=False)
+    print(result_df.head)
 
-count_dict = {}
-# create a dict of case_key, embedding value count
-for i, v in f.iteritems():
-    #print('index: ', i, 'value: ', v)
-    count_dict[i] = v
+    finished_case = []
+
+    f = result_df[result_df.case_stage_rank == 1]
+    f = f.groupby(by='case_key').ready_time.min()
+
+    count_dict = {}
+    # create a dict of case_key, embedding value count
+    for i, v in f.iteritems():
+        # print('index: ', i, 'value: ', v)
+        count_dict[i] = v
+
+    result_df['min_ready_time'] = result_df['case_key']
+    result_df['min_ready_time'] = result_df["min_ready_time"].map(count_dict)
+    result_df['min_ready_time'] = pd.to_datetime(result_df['min_ready_time'])
+
+    # df.to_csv('readty.csv', index =False)
+    # do stats after warmup and b4 cool down periord, all jobs whose ready time bewteen thewse are considered finished?
+    stats_start_ready_date = '2021-05-18 00:00:00'
+    stat_end_ready_date = '2021-05-21 00:00:00'
+    stats_df = result_df[
+        (result_df.min_ready_time >= stats_start_ready_date) & (result_df.min_ready_time < stat_end_ready_date)]
+    stats_df = stats_df.sort_values(["case_key", "case_stage_rank"], ascending=(True, True))
+
+    # how to i calculate total in-system time for each case
+    # group by case_key, find minimum ready_time, find maximum end_time, difference is the total in system time
+    tmp = stats_df[stats_df['client'] == 'Signout']
+    tmp.apply(add_finished_stats, args=(finished_case,), axis=1)
+    # get case_key
+
+    print('finished case', finished_case)
+    finished = stats_df[stats_df['case_key'].isin(finished_case)]
+    finished.to_csv('stats_out.csv', index=False)
+
+    # the last stage is signout
+
+    ready_time_df = finished.groupby(by='case_key').ready_time.min()
+    max_end_time_df = finished.groupby(by='case_key').end.max()
+
+    print(max_end_time_df, ready_time_df)
+    print(max_end_time_df - ready_time_df)
+
+    total_duration_df = pd.DataFrame(max_end_time_df - ready_time_df, columns=['optimised_duration'])
+    print('or average', total_duration_df['optimised_duration'].mean())
+    logstr.append('average {} \n'.format(total_duration_df['optimised_duration'].mean()))
+    staffingconfig = []
+    for key, value in staffing[2].items():
+        s = f'{key} : {value} \n'
+        staffingconfig.append(s)
+    staffingconfig.append('average {} \n'.format(total_duration_df['optimised_duration'].mean()))
+    write_to_file('log.txt', staffingconfig)
+    
+
+    bench_duration = {}
+    for key in finished_case:
+        bench_duration[key] = bench_finish_time[key] - bench_ready_time[key]
+    bench_duration_df = pd.DataFrame.from_dict(bench_duration, orient='index', columns=['bench_duration'])
+    print('bench mean value', bench_duration_df.mean())
+
+    result = pd.concat([total_duration_df, bench_duration_df], axis=1, join='inner')
+    result.to_csv('duration_compare.csv')
 
 
-df['min_ready_time'] = df['case_key']
-df['min_ready_time'] = df["min_ready_time"].map(count_dict)
-df['min_ready_time'] = pd.to_datetime(df['min_ready_time'])
+def solve_multi_times():
+    for i in range(0, 10):
+        paras['result'] = []
 
-#df.to_csv('readty.csv', index =False)
-# do stats after warmup and b4 cool down periord, all jobs whose ready time bewteen thewse are considered finished?
-stats_start_ready_date  = '2021-05-18 00:00:00'
-stat_end_ready_date  = '2021-05-21 00:00:00'
-stats_df = df[(df.min_ready_time >= stats_start_ready_date) & (df.min_ready_time < stat_end_ready_date)]
-stats_df = stats_df.sort_values(["case_key", "case_stage_rank"], ascending=(True, True))
+        solve()
+        # solve_period()
+
+        result_df = pd.DataFrame(paras['result'],
+                                 columns=['case_key', 'case_name', 'client', 'case_stage_rank', 'start', 'end',
+                                          'duration', 'ready_time'])
+        result_df[["start", "end", "ready_time"]] = result_df[["start", "end", "ready_time"]].apply(pd.to_datetime)
+        result_df = result_df.sort_values(["case_key", "case_stage_rank"], ascending=(False, True))
+        result_df.to_csv('out.csv', index=False)
+        print(result_df.head)
+
+        finished_case = []
+
+        f = result_df[result_df.case_stage_rank == 1]
+        f = f.groupby(by='case_key').ready_time.min()
+
+        count_dict = {}
+        # create a dict of case_key, embedding value count
+        for i, v in f.iteritems():
+            # print('index: ', i, 'value: ', v)
+            count_dict[i] = v
+
+        result_df['min_ready_time'] = result_df['case_key']
+        result_df['min_ready_time'] = result_df["min_ready_time"].map(count_dict)
+        result_df['min_ready_time'] = pd.to_datetime(result_df['min_ready_time'])
+
+        # df.to_csv('readty.csv', index =False)
+        # do stats after warmup and b4 cool down periord, all jobs whose ready time bewteen thewse are considered finished?
+        stats_start_ready_date = '2021-05-18 00:00:00'
+        stat_end_ready_date = '2021-05-21 00:00:00'
+        stats_df = result_df[
+            (result_df.min_ready_time >= stats_start_ready_date) & (result_df.min_ready_time < stat_end_ready_date)]
+        stats_df = stats_df.sort_values(["case_key", "case_stage_rank"], ascending=(True, True))
+
+        # how to i calculate total in-system time for each case
+        # group by case_key, find minimum ready_time, find maximum end_time, difference is the total in system time
+        tmp = stats_df[stats_df['client'] == 'Signout']
+        tmp.apply(add_finished_stats, args=(finished_case,), axis=1)
+        # get case_key
+
+        print('finished case', finished_case)
+        finished = stats_df[stats_df['case_key'].isin(finished_case)]
+        finished.to_csv('stats_out.csv', index=False)
+
+        # the last stage is signout
+
+        ready_time_df = finished.groupby(by='case_key').ready_time.min()
+        max_end_time_df = finished.groupby(by='case_key').end.max()
+
+        print(max_end_time_df, ready_time_df)
+        print(max_end_time_df - ready_time_df)
+
+        total_duration_df = pd.DataFrame(max_end_time_df - ready_time_df, columns=['optimised_duration'])
+        print('or average', total_duration_df['optimised_duration'].mean())
+        logstr.append('average {} \n'.format(total_duration_df['optimised_duration'].mean()))
+
+        bench_duration = {}
+        for key in finished_case:
+            bench_duration[key] = bench_finish_time[key] - bench_ready_time[key]
+        bench_duration_df = pd.DataFrame.from_dict(bench_duration, orient='index', columns=['bench_duration'])
+        print('bench mean value', bench_duration_df.mean())
+
+        result = pd.concat([total_duration_df, bench_duration_df], axis=1, join='inner')
+        result.to_csv('duration_compare.csv')
+
+
+#solve_multi_times()
+
+# change staffing for the last period
+def change_staffing():
+    global staffing
+    # add 2 staffing to each stage excep embedding
+    last_staffing = staffing[2]
+    for step in range(0,7):
+
+        for key in last_staffing:
+            if key == 2: continue
+            print('key', key)
+            last_staffing[key] = last_staffing[key] + 2
+
+        paras['result'] = []
+
+        solve()
+        record_result()
+
+change_staffing()
 
 
 
-
-# how to i calculate total in-system time for each case
-# group by case_key, find minimum ready_time, find maximum end_time, difference is the total in system time
-tmp = stats_df[stats_df['client'] == 'Signout']
-tmp.apply(add_finished_stats, axis=1)
-# get case_key
-
-print('finished case', finished_case)
-finished = stats_df[stats_df['case_key'].isin(finished_case)]
-finished.to_csv('stats_out.csv', index = False)
-
-# the last stage is signout
-
-ready_time_df = finished.groupby(by='case_key').ready_time.min()
-max_end_time_df = finished.groupby(by='case_key').end.max()
-
-print(max_end_time_df, ready_time_df)
-print(max_end_time_df - ready_time_df)
-
-total_duration_df = pd.DataFrame(max_end_time_df - ready_time_df, columns=['optimised_duration'])
-print('or average',total_duration_df['optimised_duration'].mean())
-
-
-bench_duration = {}
-for key in finished_case:
-    bench_duration[key] = bench_finish_time[key] - bench_ready_time[key]
-bench_duration_df = pd.DataFrame.from_dict(bench_duration, orient='index', columns=['bench_duration'])
-print('bench mean value',bench_duration_df.mean())
-
-
-
-result = pd.concat([total_duration_df, bench_duration_df], axis=1, join='inner')
-result.to_csv('duration_compare.csv')
+write_to_file(logstr)

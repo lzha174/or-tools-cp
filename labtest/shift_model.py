@@ -15,6 +15,7 @@ from drawing import draw
 
 
 def shift_model(paras, job_data, day_index=0, period = 0):
+    paras['unfinished'] = {}
     # every job has 4 tasks, third task is processed in batch, capacity is 1000
     # every task of job start time and end time for stage 0, 1, 3 must fall in the normal working hours 8am - 6 pm  every day
     # every task for stage 2 must start at 12pm or 6pm, first start lasts 2 hours, second start lasts 9 hours
@@ -277,7 +278,13 @@ def shift_model(paras, job_data, day_index=0, period = 0):
     solver = cp_model.CpSolver()
     solver.parameters.max_time_in_seconds = paras['max_serach_time_sec']
     status = solver.Solve(model)
-    print(status, cp_model.INFEASIBLE, cp_model.FEASIBLE)
+    if status == cp_model.UNKNOWN:
+        print('unknown')
+        write_to_file('solver.txt', ['shit\n'])
+        exit(1)
+    print('solver', status, cp_model.INFEASIBLE, cp_model.FEASIBLE)
+    solver_output = [f'day {day_index} period {period} status = {status}\n']
+    write_to_file('solver.txt', solver_output)
     # Print solution.
     if status == cp_model.FEASIBLE or status == cp_model.OPTIMAL:
 
@@ -377,7 +384,7 @@ def shift_model(paras, job_data, day_index=0, period = 0):
                                                                                                  new_ready_time)
                     if t==paras[batch_stage_idx_str]:
                         # need to remove used embedding for today
-                        print('duration is ', solver.Value(durations[j, idx]) )
+                        #print('duration is ', solver.Value(durations[j, idx]) )
                         if solver.Value(durations[j, idx]) == paras['duration_2'][nine_hour_idx]:
                             paras['night_used_embeddings'] = paras['night_used_embeddings'] + 1
                         else:
@@ -434,7 +441,7 @@ def shift_model(paras, job_data, day_index=0, period = 0):
         else:
             print('Optimal')
 
-        write_to_file(logstr)
+        #write_to_file(logstr)
         print(f'finish {finished_count}')
         print('night used {i}'.format(i=paras['night_used_embeddings']))
         print('lunch used {i}'.format(i=paras['lunch_used_embeddings']))

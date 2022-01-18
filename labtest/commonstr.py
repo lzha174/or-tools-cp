@@ -60,7 +60,7 @@ min_shift_key = min(shift_patterns)
 max_shift_key = max(shift_patterns)
 # key is shift pattern index, value is staffing for each stage during this period
 
-staffing = {0: {0: 13, 1:12, 2:1000, 3:18, 4:14}, 1:{0: 12, 1:12, 2:1000, 3:14, 4:5}, 2:{0: 18, 1:14, 2:1000, 3:12, 4:10}}
+staffing = {0: {0: 3, 1:12, 2:1000, 3:8, 4:4}, 1:{0: 3, 1:12, 2:1000, 3:8, 4:4}, 2:{0: 3, 1:5, 2:1000, 3:6, 4:4}}
 
 # create windows for loading data
 day_data_windows = {} # index by day, save array of data windows
@@ -114,8 +114,15 @@ def format_time(n = 15):
 import os
 
 #os.remove("log.txt")
+def clear_file(file):
 
-def write_to_file(strs):
-    file2 = open(r"log.txt", "a")
+    file = open(file,"r+")
+    file.truncate(0)
+    file.close()
+def write_to_file(filename = 'log.txt', strs=[]):
+    file2 = open(filename, "a")
     file2.writelines(strs)
     file2.close()
+
+clear_file("log.txt")
+clear_file("solver.txt")
