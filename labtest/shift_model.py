@@ -37,6 +37,7 @@ def shift_model(paras, job_data, day_index=0, period = 0):
     format_end = format_time(ends_time)
     # if shift start before 12am, if so, no need to sceduling 9hour embedding at this tage
     onlySchedulingLunchBatch = shift_patterns[period].start * seconds_per_hour < 12 * seconds_per_hour and shift_patterns[period].end * seconds_per_hour < 12 * seconds_per_hour
+    onlySchedulingLunchBatch =  False
     capacity = staffing[period]
     night_batch_capacity = capacity[paras[batch_stage_idx_str]]
 
@@ -87,7 +88,11 @@ def shift_model(paras, job_data, day_index=0, period = 0):
 
                 task_end_time_lb = starts_time + task.duration
                 start_horizon = ends_time
+                extra = int(0.5 * seconds_per_hour)
+                # allow work finish 0.5 hour later if this is not the last window
                 end_horizon = ends_time
+                if period !=max_shift_key:
+                    end_horizon = end_horizon + extra
             else:
                 task_start_time_lb = paras['start_emdbedding'][two_hour_idx] + day_index * day_in_seconds
 
@@ -281,7 +286,7 @@ def shift_model(paras, job_data, day_index=0, period = 0):
     if status == cp_model.UNKNOWN:
         print('unknown')
         write_to_file('solver.txt', ['shit\n'])
-        exit(1)
+        #exit(1)
     print('solver', status, cp_model.INFEASIBLE, cp_model.FEASIBLE)
     solver_output = [f'day {day_index} period {period} status = {status}\n']
     write_to_file('solver.txt', solver_output)
@@ -422,8 +427,8 @@ def shift_model(paras, job_data, day_index=0, period = 0):
                 # change first unifinished task ready time to be last finished job end time
                 new_tasks = []
                 for idx, task in enumerate(unfinished_tasks):
-                    if idx == 0:
-                        task = task._replace(ready_time=ready_time)
+                    #if idx == 0:
+                    task = task._replace(ready_time=ready_time)
                     new_tasks.append(task)
                     #print('ready_time', format_time(task.ready_time))
 

@@ -52,15 +52,40 @@ for day in range(0,7):
     half_day_pairs.append(value)
 # index is patten index, value is start time and ending time
 shift_pattern_type = collections.namedtuple('shift', 'start start_str end end_str')
-shift_patterns = {0:shift_pattern_type(start=8, start_str='08:00', end=12, end_str='12:00'), 1: shift_pattern_type(start=12, start_str='12:00',
+shift_patterns = {0:shift_pattern_type(start=6, start_str='06:00', end=10, end_str='10:00'), 1: shift_pattern_type(start=10, start_str='10:00',
                                                                                                                    end=14, end_str='14:00'),
-                  2:shift_pattern_type(start=14, start_str='14:00', end=20, end_str='20:00' )}
+                  2:shift_pattern_type(start=14, start_str='14:00', end=16, end_str='16:00' )}
 
-min_shift_key = min(shift_patterns)
-max_shift_key = max(shift_patterns)
+
 # key is shift pattern index, value is staffing for each stage during this period
 
 staffing = {0: {0: 3, 1:12, 2:1000, 3:8, 4:4}, 1:{0: 3, 1:12, 2:1000, 3:8, 4:4}, 2:{0: 3, 1:5, 2:1000, 3:6, 4:4}}
+
+# I want to create shift patterns every 2 hours from 8am to 6pm
+
+def format_staff_time(value):
+    if value < 10:
+        value_str = '0{d}:00'.format(d=value)
+    else:
+        value_str = '{d}:00'.format(d=value)
+    return value_str
+
+shift_patterns = {}
+staffing = {}
+staff_interval = 2
+for step in range(0,6):
+    start = 8 + staff_interval*step
+    end = start + staff_interval
+    start_str = format_staff_time(start)
+    end_str = format_staff_time(end)
+
+    shift = shift_pattern_type(start=start, start_str=start_str, end=end, end_str = end_str)
+    shift_patterns[step] = shift
+    # for now , make staffing same
+    staffing[step] = {0: 3, 1:12, 2:1000, 3:8, 4:4}
+
+min_shift_key = min(shift_patterns)
+max_shift_key = max(shift_patterns)
 
 # create windows for loading data
 day_data_windows = {} # index by day, save array of data windows
@@ -84,7 +109,8 @@ for day in range(0,7):
 for key, data in day_data_windows.items():
     print (f'day {key} data windows {data}')
 
-
+#  is it possible to know if a worker is busy or idle during an interval?
+# in an optimised solution, yes, you can assign new task to next avaliable worker, then measure utility,  in the real world, maybe not?
 
 
 periods = [morning_str, lunch_str]
@@ -113,7 +139,7 @@ def format_time(n = 15):
 
 import os
 
-#os.remove("log.txt")
+#os.remove("log-increase.txt")
 def clear_file(file):
 
     file = open(file,"r+")
@@ -124,5 +150,5 @@ def write_to_file(filename = 'log.txt', strs=[]):
     file2.writelines(strs)
     file2.close()
 
-clear_file("log.txt")
-clear_file("solver.txt")
+#clear_file("log.txt")
+#clear_file("solver.txt")

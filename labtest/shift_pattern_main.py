@@ -47,10 +47,7 @@ def examine_case(case_idx, day_index=0):
         ready = format_time(task.ready_time)
         print(f'client {client} priority {priority} duration {duration} ready {ready} ready {task.ready_time}')
 
-        pd_ready_time = pd.to_datetime(ready)
-        pd_day_end = pd.to_datetime(day_endings[day_index])
-        if (idx == 0):
-            assert (pd_ready_time < pd_day_end)
+
 
 
 def load_real_data():
@@ -310,6 +307,9 @@ def load_new_day(df, day, period):
 
 df = read()
 def solve():
+
+    paras['result'] = []
+
     global job_data
     for day, data_windows in day_data_windows.items():
         paras['night_used_embeddings'] = 0
@@ -322,9 +322,14 @@ def solve():
             print('total jobs {} for day {} period {} is {}'.format(data_window, day, idx, len(job_data)))
             if (len(job_data) == 0): continue
 
+            if day == 6 and idx==2:
+                for key in job_data:
+                    print(f'job {key}')
+                    examine_case(key, day)
 
             shift_model(paras, job_data, day, idx)
 
+    record_result()
 
 def solve_period():
     global job_data
@@ -506,14 +511,14 @@ def change_staffing():
             print('key', key)
             last_staffing[key] = last_staffing[key] + 2
 
-        paras['result'] = []
+
 
         solve()
-        record_result()
 
 
-change_staffing()
 
+#change_staffing()
+solve()
 
 
 #write_to_file(logstr)
