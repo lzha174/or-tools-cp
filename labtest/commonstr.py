@@ -82,7 +82,7 @@ for step in range(0,6):
     shift = shift_pattern_type(start=start, start_str=start_str, end=end, end_str = end_str)
     shift_patterns[step] = shift
     # for now , make staffing same
-    staffing[step] = {0: 3, 1:12, 2:1000, 3:8, 4:4}
+    staffing[step] = {0: 6, 1:12, 2:1000, 3:12, 4:7}
 
 min_shift_key = min(shift_patterns)
 max_shift_key = max(shift_patterns)
@@ -152,3 +152,28 @@ def write_to_file(filename = 'log.txt', strs=[]):
 
 #clear_file("log.txt")
 #clear_file("solver.txt")
+
+paras = {
+    'lunch_used_embeddings': 0,
+    'night_used_embeddings': 0,
+    'unfinished': {},  # unfinished job from befor b4
+    max_job_str: 599,
+    'days': 5,
+    'start': 8,  # start time for non embedding stage
+    'end': 21.5,  # end time for non embedding stage,  8pm - 5am
+    'start_emdbedding': [12 * seconds_per_hour, 20 * seconds_per_hour],
+    # start time for category 0 and 1 at stage 2, 12pm, and 6 pm
+    'duration_2': [2 * seconds_per_hour, 9 * seconds_per_hour],  # duration for category 0 and 1 at embedding in seconds
+
+    'max_serach_time_sec': 70,
+    'capacity': {0: 3, 1: 12, 2: 1000, 3: 8, 4: 4},
+    job_weights_str: {},
+    'result': [],
+    'full': False,
+    'day_jobs': {}
+}
+
+two_hour_idx = 0
+nine_hour_idx = 1
+nigh_stage = 20
+next_task_type = collections.namedtuple('next_task', 'job_key, task')

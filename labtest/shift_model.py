@@ -27,8 +27,6 @@ def shift_model(paras, job_data, day_index=0, period = 0):
 
     maxDuration = 9 * seconds_per_hour
 
-    two_hour_idx = 0
-    nine_hour_idx = 1
 
     # start and end time is based on shift patterns now
     starts_time = int(shift_patterns[period].start * seconds_per_hour + day_index  * day_in_seconds)
@@ -290,7 +288,7 @@ def shift_model(paras, job_data, day_index=0, period = 0):
     print('solver', status, cp_model.INFEASIBLE, cp_model.FEASIBLE)
     solver_output = [f'day {day_index} period {period} status = {status}\n']
     write_to_file('solver.txt', solver_output)
-    assert(status != cp_model.UNKNOWN)
+    assert(status == cp_model.FEASIBLE  or status == cp_model.OPTIMAL)
     # Print solution.
     if status == cp_model.FEASIBLE or status == cp_model.OPTIMAL:
 

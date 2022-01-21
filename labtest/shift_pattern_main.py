@@ -14,25 +14,6 @@ task_type = collections.namedtuple('task', 'client_idx priority_idx duration rea
 
 job_data = {}  # key by key_idx, inside need to store tasks in order which may have same tasks at different stage
 
-paras = {
-    'lunch_used_embeddings': 0,
-    'night_used_embeddings': 0,
-    'unfinished': {},  # unfinished job from befor b4
-    max_job_str: 500 ,
-    'days': 5,
-    'start': 8,  # start time for non embedding stage
-    'end': 21.5,  # end time for non embedding stage,  8pm - 5am
-    'start_emdbedding': [12 * seconds_per_hour, 20 * seconds_per_hour],
-    # start time for category 0 and 1 at stage 2, 12pm, and 6 pm
-    'duration_2': [2 * seconds_per_hour, 9 * seconds_per_hour],  # duration for category 0 and 1 at embedding in seconds
-
-    'max_serach_time_sec': 60,
-    'capacity': {0: 3, 1: 12, 2: 1000, 3: 8, 4: 4},
-    job_weights_str: {},
-    'result': [],
-    'full': False,
-    'day_jobs': {}
-}
 
 # i want to find max work time at evening
 
