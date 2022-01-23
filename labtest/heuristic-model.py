@@ -11,7 +11,7 @@ from commonstr import *
 from schedulingclasses import *
 import openpyxl
 
-task_type = collections.namedtuple('task', 'client_idx priority_idx duration ready_time order first_task_ready_time')
+task_type = collections.namedtuple('task', 'case_key_idx client_idx priority_idx duration ready_time order first_task_ready_time')
 
 job_data = {}  # key by key_idx, inside need to store tasks in order which may have same tasks at different stage
 
@@ -209,8 +209,7 @@ def row_process(row, day, period):
     x = paras['day_jobs'].get((day, period), None)
     if x is None: return
     if row.case_key not in paras['day_jobs'][day, period]: return
-    if row.case_key == 'dccd1e14b9e9c6e0217bce756b92e643e500223dfa1bedd2d955c71d0bb6ca5b':
-        print(row.case_key)
+
     # print('name = ', name)
     if len(job_data) == paras[max_job_str]:
         print('job lenth {}'.format(len(job_data)))
@@ -245,7 +244,7 @@ def row_process(row, day, period):
         if row.duration_sec > paras['95_quantile'][row.client]:
             duration = int(paras['95_quantile'][row.client])
     min_ready_time = int(paras['min_ready_time_series'][row.case_key])
-    task = task_type(client_idx=client_idx, priority_idx=priority_idx, duration=duration,
+    task = task_type(case_key_idx=case_key_idx, client_idx=client_idx, priority_idx=priority_idx, duration=duration,
                      ready_time=min_ready_time, order=row.case_stage_rank, first_task_ready_time=min_ready_time)
     job_data[case_key_idx].append(task)
     # newly added job has weight of 1
@@ -260,7 +259,7 @@ def read():
 
 def load_new_day(df, day, period):
     df.apply(row_process, args=(day, period,), axis=1)
-    print(f'new jobs {len(job_data)}')
+    #print(f'new jobs {len(job_data)}')
     # add floatted job
     if len(paras['unfinished']) > 0:
         unfinished = paras['unfinished']
@@ -411,17 +410,17 @@ def define_workers(day_index = 0, period = 2):
         if stage != paras[batch_stage_idx_str]:
             capacity = staffing[period]
             stage_workers[stage] = WokrerCollection(stage, capacity[stage], starts_time, ends_time)
-            print(stage_workers[stage])
+            #print(stage_workers[stage])
         else:
             starts_time = paras['start_emdbedding'][two_hour_idx] + day_index * day_in_seconds
             ends_time = starts_time + 2 * seconds_per_hour
             stage_workers[stage] = WokrerCollection(stage, capacity[stage], starts_time, ends_time)
-            print(stage_workers[stage])
+            #print(stage_workers[stage])
 
             starts_time = paras['start_emdbedding'][nine_hour_idx] + day_index * day_in_seconds
             ends_time = starts_time + 9 * seconds_per_hour
             stage_workers[nigh_stage] = WokrerCollection(nigh_stage, capacity[stage], starts_time, ends_time)
-            print(stage_workers[nigh_stage])
+            #print(stage_workers[nigh_stage])
 
             # for embedding we need two stages, one for lunch one for night
 
@@ -435,7 +434,7 @@ def define_jobs():
     for job, tasks in job_data.items():
         new_job = JobClass()
         new_job.set_job(job, tasks)
-        print(new_job)
+        #print(new_job)
         allJobs.add_job(new_job)
     #allJobs.next_task_stage(0)
 
@@ -446,56 +445,71 @@ def assign_for_shift(day_index = 0, period=2):
     # find the smallest arrival task and assign to the next avaliable worker until it is impossible to assign
     ends_time = int(shift_patterns[period].end * seconds_per_hour + day_index * day_in_seconds)
     have_task_to_do = True
+    # when to stop assigning? 1 no more tasks, two no worker for that stage
     while have_task_to_do:
         task_to_do = allJobs.next_task_for_each_stage(ends_time)
         if len(task_to_do) > 0:
             have_task_to_do = True
         else:
             have_task_to_do = False
-
+        find_a_worker = False
         for stage, tasks in task_to_do.items():
 
             if stage != paras[batch_stage_idx_str]:
                 # assign this task to next avaliable worker and mark this task finished
-                print('ready time,', tasks.task.get_ready_time())
+                #print('ready time,', tasks.task.get_ready_time())
+                #print(f'perform on this task for job {tasks.job_key}')
+                #print(tasks.task)
                 first_ready_time = tasks.task.get_first_task_ready_time()
-                worker = stage_workers[stage].next_avaliable_worker(tasks.task.get_ready_time())
-                print('next avaliable worker')
-                print(worker)
+                worker = stage_workers[stage].next_avaliable_worker(tasks.task.get_ready_time(), tasks.task.duration)
+                #print('next avaliable worker')
+                #print(worker)
                 if worker is not None:
+                    find_a_worker = True
                     # assign this task to thie worker
                     task_start_time = max(worker.get_avaliable_time(), tasks.task.get_ready_time())
-                    worker.update_avaliable_time(task_start_time, tasks.task.duration)
-                    print(worker)
+                    worker.update_avaliable_time(tasks.task.get_ready_time(), tasks.task.duration)
+                    #print('after assign')
+                    #print(worker)
                     # mark this task finished for that job set the task interval
                     allJobs.mark_job_task_finish(tasks.job_key, task_start_time)
-                    allJobs.show_job(tasks.job_key)
+                    #allJobs.show_job(tasks.job_key)
             else:
                 for next_task in tasks:
                     # get priority
+                    #print(f'perform on this task for job {next_task.job_key}')
+                    #print(next_task.task)
                     priority = next_task.task.priority
                     if priority == paras[nine_hour_priority_idx_str]:
+                        #allJobs.show_job(next_task.job_key)
                         # put this into night batch
-                        worker = stage_workers[nigh_stage].next_avaliable_worker(next_task.task.get_ready_time())
+                        #print(stage_workers[nigh_stage])
+                        worker = stage_workers[nigh_stage].next_avaliable_worker(next_task.task.get_ready_time(), next_task.task.duration)
+                        ready_time = format_time(next_task.task.get_ready_time())
+                        #print(worker, ready_time, next_task.task.duration)
                         duration = 9 * seconds_per_hour
-                        print('next avaliable worker')
-                        print(worker)
+                        #print('next avaliable worker')
+                        #print(worker)
                     else:
                         # 2 hour prioity, put it into lunch batch if possible
                         # get next avalaible worker from two hour batch
-                        worker = stage_workers[stage].next_avaliable_worker(next_task.task.get_ready_time())
+                        worker = stage_workers[stage].next_avaliable_worker(next_task.task.get_ready_time(), next_task.task.duration)
                         duration = 2 * seconds_per_hour
                         if worker is None:
                             # passed lunch batch
-                            worker = stage_workers[nigh_stage].next_avaliable_worker(next_task.task.get_ready_time())
+                            worker = stage_workers[nigh_stage].next_avaliable_worker(next_task.task.get_ready_time(), next_task.task.duration)
                             duration = 9 * seconds_per_hour
-                            assert (worker is not None)
 
-                    task_start_time = max(worker.get_avaliable_time(), next_task.task.get_ready_time())
-                    worker.update_avaliable_time(task_start_time, duration)
-                    allJobs.mark_job_task_finish(next_task.job_key, task_start_time)
-                    allJobs.show_job(next_task.job_key)
-
+                    if worker is not None:
+                        find_a_worker = True
+                        #print(next_task.task)
+                        task_start_time = max(worker.get_avaliable_time(), next_task.task.get_ready_time())
+                        worker.update_avaliable_time(next_task.task.get_ready_time(), duration)
+                        allJobs.mark_job_task_finish(next_task.job_key, task_start_time)
+                    #allJobs.show_job(next_task.job_key)
+            # no worker is avaliable for any current task to do, a worker is avliable if next avaliable time is before shift ending time
+        if find_a_worker == False:
+            have_task_to_do = False
 
 
 # now try to assign jobs to workers at each stage
@@ -506,6 +520,7 @@ def assign_model():
 
     global job_data
     for day, data_windows in day_data_windows.items():
+        job_today = 0
         paras['night_used_embeddings'] = 0
         paras['lunch_used_embeddings'] = 0
         # index of data_window is same as shift_patterns
@@ -513,12 +528,15 @@ def assign_model():
             job_data = {}
             paras['full'] = False
             load_new_day(df, day, idx)
+            job_today = job_today +  len(job_data)
             print('total jobs {} for day {} period {} is {}'.format(data_window, day, idx, len(job_data)))
-            if (len(job_data) == 0): continue
+            #if (len(job_data) == 0): continue
             define_jobs()
-            define_workers()
-            assign_for_shift()
-            exit(1)
+            define_workers(day, idx)
+            assign_for_shift(day, idx)
+        print('todao job is ', job_today)
+    record_result()
+
 
 assign_model()
 

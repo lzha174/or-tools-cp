@@ -217,8 +217,7 @@ def row_process(row, day, period):
     x = paras['day_jobs'].get((day, period), None)
     if x is None: return
     if row.case_key not in paras['day_jobs'][day, period]: return
-    if row.case_key == 'dccd1e14b9e9c6e0217bce756b92e643e500223dfa1bedd2d955c71d0bb6ca5b':
-        print(row.case_key)
+
     # print('name = ', name)
     if len(job_data) == paras[max_job_str]:
         print('job lenth {}'.format(len(job_data)))
@@ -268,8 +267,9 @@ def read():
 
 def load_new_day(df, day, period):
     df.apply(row_process, args=(day, period,), axis=1)
-    print(f'new jobs {len(job_data)}')
+    #print(f'new jobs {len(job_data)}')
     # add floatted job
+    return
     if len(paras['unfinished']) > 0:
         unfinished = paras['unfinished']
         for case_key_idx, tasks in unfinished.items():
@@ -303,12 +303,8 @@ def solve():
             print('total jobs {} for day {} period {} is {}'.format(data_window, day, idx, len(job_data)))
             if (len(job_data) == 0): continue
 
-            if day == 6 and idx==2:
-                for key in job_data:
-                    print(f'job {key}')
-                    examine_case(key, day)
 
-            shift_model(paras, job_data, day, idx)
+            #shift_model(paras, job_data, day, idx)
 
     record_result()
 

@@ -6,14 +6,18 @@ class WorkerClass:
         self.end_time = end_time
         self.next_avalaible_time = self.start_time
 
-    def update_avaliable_time(self, task_start_time, time):
-        self.next_avalaible_time = task_start_time + time
+    def update_avaliable_time(self, task_ready_time, duration):
+        task_start_time = max(task_ready_time, self.next_avalaible_time)
+        self.next_avalaible_time = task_start_time + duration
 
     def get_avaliable_time(self):
         return self.next_avalaible_time
 
     def __str__(self):
-        f = f'woker start {self.start_time} end {self.end_time} avaliabe {self.next_avalaible_time}'
+        start = format_time(self.start_time)
+        end = format_time(self.end_time)
+        avaliable = format_time(self.next_avalaible_time)
+        f = f'woker start {start} end {end} avaliabe {avaliable}'
         return f
 
 class WokrerCollection:
@@ -25,20 +29,30 @@ class WokrerCollection:
     
     def __str__(self):
         output = [f'stage {self.stage} with {len(self.workers)} workers start {self.start} end {self.end}']
+        for w in self.workers:
+            output.append(w.__str__())
         if self.stage != paras[batch_stage_idx_str] and self.stage != nigh_stage:
             for w in self.workers:
                 output.append(w.__str__())
     
         return ('\n').join(o for o in output)
 
-    def next_avaliable_worker(self, ready_time):
-        next_avalible_time = 1e9
+    def next_avaliable_worker(self, ready_time, duration):
+        next_avalible_time = None
         next_worker = None
         for worker in self.workers:
             #if worker.get_avaliable_time() < ready_time: continue
-            if worker.get_avaliable_time() < next_avalible_time :
+            task_start_time = max(ready_time, worker.get_avaliable_time())
+            task_finished_time = task_start_time + duration
+            if task_finished_time > worker.end_time: continue
+
+            if next_avalible_time is None:
                 next_avalible_time = worker.get_avaliable_time()
                 next_worker = worker
+            else:
+                if worker.get_avaliable_time() < next_avalible_time :
+                    next_avalible_time = worker.get_avaliable_time()
+                    next_worker = worker
         return next_worker
 
 class TaskClass:
@@ -57,7 +71,7 @@ class TaskClass:
     def __str__(self):
         stage = self.task.client_idx
         client = paras[idx_to_name_client_str][stage]
-        return (f'task {client} start {format_time(self.start_task_time)} end {format_time(self.end_task_time)} finished {self.task_finished} ready {format_time(self.ready_time)}')
+        return (f'task {client} start {format_time(self.start_task_time)} end {format_time(self.end_task_time)} finished {self.task_finished}  duration {self.duration} ready {format_time(self.ready_time)}')
 
     def get_task(self):
         return self.task
@@ -74,6 +88,19 @@ class TaskClass:
         self.start_task_time = task_start_time
         self.end_task_time = task_start_time + self.duration
         self.task_finished = True
+
+        start_time = format_time(self.start_task_time)
+        end_time = format_time(self.end_task_time)
+        ready_time = format_time(self.ready_time)
+
+        task_name = paras["idx_to_name_client"][self.task.client_idx]
+
+        case_key_idx = self.task.case_key_idx 
+        case_name = paras[idx_to_name_key_str][case_key_idx]
+        finished_data = [case_key_idx, case_name, task_name, self.task.order, start_time, end_time, self.duration, ready_time]
+        paras['result'].append(finished_data)
+
+
         return self.end_task_time
 
     def get_finish(self):
@@ -126,6 +153,7 @@ class JobClass:
 
     def get_next_task(self):
         # return next task to do
+        if self.job_done: return None
         return self.taskcollection[self.current_task_idx]
 
 
@@ -150,6 +178,7 @@ class JobCollection():
 
         for job_key, job in self.jobs.items():
             next_task = job.get_next_task()
+            if next_task is None: continue
             task_stage = next_task.get_client_idx()
             if task_stage != paras[batch_stage_idx_str]:
                 if next_task.ready_time + next_task.duration > ends_time: continue
@@ -162,8 +191,8 @@ class JobCollection():
                 if task_stage not in task_to_do:
                     task_to_do[task_stage] = []
                 task_to_do[task_stage].append(next_task_type(job_key=job_key, task=next_task))
-
-        print(task_to_do)
+        #print('task to do are ')
+        #print(task_to_do)
         return task_to_do
 
     def next_task_stage(self, stage):
@@ -174,14 +203,14 @@ class JobCollection():
             for job_key, job in self.jobs.items():
                 next_task = job.get_next_task()
                 if next_task.client_idx == stage:
-                    print(next_task)
+                    #print(next_task)
                     if task_to_do is not None:
                         if task_to_do.first_task_ready_time > next_task.first_task_ready_time:
                             task_to_do = next_task
                     else:
                         task_to_do = next_task
-            print(f'next task at {stage}')
-            print(task_to_do)
+            #print(f'next task at {stage}')
+            #print(task_to_do)
         else:
             # we are trying to find batched
             task_to_do = []
@@ -189,4 +218,4 @@ class JobCollection():
                 next_task = job.get_next_task()
                 if next_task.client_idx == stage:
                     task_to_do.append(next_task)
-            print('to do embedding', len(task_to_do))
+            #print('to do embedding', len(task_to_do))

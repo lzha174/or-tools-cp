@@ -82,7 +82,7 @@ for step in range(0,6):
     shift = shift_pattern_type(start=start, start_str=start_str, end=end, end_str = end_str)
     shift_patterns[step] = shift
     # for now , make staffing same
-    staffing[step] = {0: 6, 1:12, 2:1000, 3:12, 4:7}
+    staffing[step] = {0: 5, 1:12, 2:1000, 3:7, 4:4}
 
 min_shift_key = min(shift_patterns)
 max_shift_key = max(shift_patterns)
@@ -157,7 +157,7 @@ paras = {
     'lunch_used_embeddings': 0,
     'night_used_embeddings': 0,
     'unfinished': {},  # unfinished job from befor b4
-    max_job_str: 599,
+    max_job_str: 500,
     'days': 5,
     'start': 8,  # start time for non embedding stage
     'end': 21.5,  # end time for non embedding stage,  8pm - 5am
