@@ -184,6 +184,8 @@ def load_real_data():
     f = df[df['embedding_count'].isna()].case_key.unique()
     print(f)
 
+
+
     return df
 
 
@@ -376,8 +378,22 @@ def record_result():
     result = pd.concat([total_duration_df, bench_duration_df], axis=1, join='inner')
     result.to_csv('duration_compare.csv')
 
+    utilisation_df = pd.DataFrame(paras['utilisation'],
+                             columns=['day', 'period', 'client', 'utilisation'])
+    utilisation_df.to_csv('utilisation.csv', index=False)
 
+    for day in range(18,21):
+        stats_start_ready_date =f'2021-05-{day} 00:00:00'
 
+        stat_end_ready_date = f'2021-05-{day+1} 00:00:00'
+
+        f = df[df.case_stage_rank==1]
+        f = f[(f.work_ready_timestamp > stats_start_ready_date) & (f.work_ready_timestamp < stat_end_ready_date)]
+        print(stats_start_ready_date, len(f.index))
+
+        f_finished = stats_df[stats_df.case_stage_rank == 1]
+        f_finished = f_finished[(f_finished.min_ready_time > stats_start_ready_date) & (f_finished.min_ready_time < stat_end_ready_date)]
+        print(stats_start_ready_date+' finished ', len(f_finished.index))
 
 
 
@@ -407,19 +423,23 @@ def define_workers(day_index = 0, period = 2):
     for stage in paras[idx_to_name_client_str]:
         starts_time = int(shift_patterns[period].start * seconds_per_hour + day_index * day_in_seconds)
         ends_time = int(shift_patterns[period].end * seconds_per_hour + day_index * day_in_seconds)
+        lunch_start_time = 13 * seconds_per_hour + day_index * day_in_seconds
+        lunch_end_time = 14 * seconds_per_hour + day_index * day_in_seconds
+
         if stage != paras[batch_stage_idx_str]:
             capacity = staffing[period]
-            stage_workers[stage] = WokrerCollection(stage, capacity[stage], starts_time, ends_time)
+            stage_workers[stage] = WokrerCollection(stage, capacity[stage], starts_time, ends_time, lunch_start_time, lunch_end_time)
             #print(stage_workers[stage])
         else:
+            capacity_used = paras['lunch_used_embeddings']
             starts_time = paras['start_emdbedding'][two_hour_idx] + day_index * day_in_seconds
             ends_time = starts_time + 2 * seconds_per_hour
-            stage_workers[stage] = WokrerCollection(stage, capacity[stage], starts_time, ends_time)
+            stage_workers[stage] = WokrerCollection(stage, capacity[stage] - capacity_used, starts_time, ends_time, lunch_start_time, lunch_end_time)
             #print(stage_workers[stage])
-
+            capacity_used = paras['night_used_embeddings']
             starts_time = paras['start_emdbedding'][nine_hour_idx] + day_index * day_in_seconds
             ends_time = starts_time + 9 * seconds_per_hour
-            stage_workers[nigh_stage] = WokrerCollection(nigh_stage, capacity[stage], starts_time, ends_time)
+            stage_workers[nigh_stage] = WokrerCollection(nigh_stage, capacity[stage] - capacity_used, starts_time, ends_time, lunch_start_time, lunch_end_time)
             #print(stage_workers[nigh_stage])
 
             # for embedding we need two stages, one for lunch one for night
@@ -459,6 +479,8 @@ def assign_for_shift(day_index = 0, period=2):
                 # assign this task to next avaliable worker and mark this task finished
                 #print('ready time,', tasks.task.get_ready_time())
                 #print(f'perform on this task for job {tasks.job_key}')
+                job_key = tasks.job_key
+
                 #print(tasks.task)
                 first_ready_time = tasks.task.get_first_task_ready_time()
                 worker = stage_workers[stage].next_avaliable_worker(tasks.task.get_ready_time(), tasks.task.duration)
@@ -488,6 +510,8 @@ def assign_for_shift(day_index = 0, period=2):
                         ready_time = format_time(next_task.task.get_ready_time())
                         #print(worker, ready_time, next_task.task.duration)
                         duration = 9 * seconds_per_hour
+                        if worker is not None:
+                            paras['night_used_embeddings'] = paras['night_used_embeddings'] + 1
                         #print('next avaliable worker')
                         #print(worker)
                     else:
@@ -499,6 +523,10 @@ def assign_for_shift(day_index = 0, period=2):
                             # passed lunch batch
                             worker = stage_workers[nigh_stage].next_avaliable_worker(next_task.task.get_ready_time(), next_task.task.duration)
                             duration = 9 * seconds_per_hour
+                            if worker is not None:
+                                paras['night_used_embeddings'] = paras['night_used_embeddings'] + 1
+                        else:
+                            paras['lunch_used_embeddings'] = paras['lunch_used_embeddings'] + 1
 
                     if worker is not None:
                         find_a_worker = True
@@ -511,12 +539,44 @@ def assign_for_shift(day_index = 0, period=2):
         if find_a_worker == False:
             have_task_to_do = False
 
+    # scheduling for this period is finsihed, get utlisation
+    if day_index >=1 and day_index <=3:
+
+        if period == max_shift_key:
+            utilisation = [day_index, period]
+            stage_name = 'lunch_embedding'
+            average_utilisation = paras['lunch_used_embeddings'] / 1000.0
+            percentage = "{:.0%}".format(average_utilisation)
+            utilisation.append(stage_name)
+            utilisation.append(percentage)
+            paras['utilisation'].append(utilisation)
+
+            utilisation = [day_index, period]
+            stage_name = 'night_embedding'
+            average_utilisation = paras['night_used_embeddings'] / 1000.0
+            percentage = "{:.0%}".format(average_utilisation)
+            utilisation.append(stage_name)
+            utilisation.append(percentage)
+            paras['utilisation'].append(utilisation)
+
+        for key in stage_workers:
+            utilisation = [day_index, period]
+            if key == paras[batch_stage_idx_str] or key == nigh_stage: continue
+
+            stage_name = paras[idx_to_name_client_str][key]
+
+            average_utilisation = stage_workers[key].average_utilisation()
+            percentage = "{:.0%}".format(average_utilisation)
+            utilisation.append(stage_name)
+            utilisation.append(percentage)
+            paras['utilisation'].append(utilisation)
 
 # now try to assign jobs to workers at each stage
 def assign_model():
 
 
     paras['result'] = []
+    paras['utilisation'] = []
 
     global job_data
     for day, data_windows in day_data_windows.items():
@@ -535,6 +595,8 @@ def assign_model():
             define_workers(day, idx)
             assign_for_shift(day, idx)
         print('todao job is ', job_today)
+        print('night used', paras['night_used_embeddings'])
+        print('lunch used', paras['lunch_used_embeddings'])
     record_result()
 
 
@@ -544,4 +606,5 @@ assign_model()
 
 
 
+# if I add a wokrer, I want to know which stage I should add to maximise improvement
 

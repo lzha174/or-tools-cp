@@ -1,14 +1,51 @@
+import pandas as pd
+
 from commonstr import *
 
 class WorkerClass:
-    def __init__(self, start_time, end_time):
+    def __init__(self, start_time, end_time, lunch_start_time, lunch_end_time, stage):
         self.start_time = start_time
         self.end_time = end_time
         self.next_avalaible_time = self.start_time
+        self.total_busy_time = 0
+        self.tasks_done_count_before_break = 0
+        self.first_task_start_before_break = None
+        # I want to add some break constraint
+        # first lunch break between 1pm -2pm
+        self.lunch_start_time = lunch_start_time
+        self.lunch_end_time = lunch_end_time
+        # I want to add a maximum nb of tasks you can do for each wokrer per hour
+        if stage != paras[batch_stage_idx_str] and stage != nigh_stage:
+            self.stage = stage
+        else:
+            self.stage = paras[batch_stage_idx_str]
 
     def update_avaliable_time(self, task_ready_time, duration):
+        # total busy time is used to calculate utilisation
+
+        self.total_busy_time = self.total_busy_time + duration
         task_start_time = max(task_ready_time, self.next_avalaible_time)
+        # if next avlaible time is 12:50, how to make it pass lunch time??
+
+        # how to make avalible time jump out of ounch time
         self.next_avalaible_time = task_start_time + duration
+
+
+        if self.stage != paras[batch_stage_idx_str]:
+            # remember the first task time after last break
+            if self.first_task_start_before_break is None:
+                self.first_task_start_before_break = task_start_time
+                self.tasks_done_count_before_break = self.tasks_done_count_before_break + 1
+            # I am tired, take a break reset
+            elif task_start_time - self.first_task_start_before_break < seconds_per_hour and self.tasks_done_count_before_break >= capacity_before_break[self.stage]:
+                # 10 mins break
+                self.next_avalaible_time = self.next_avalaible_time + 600
+                self.tasks_done_count_before_break = 0
+                self.first_task_start_before_break = None
+            # I have not done enoughy
+            else:
+                self.tasks_done_count_before_break = self.tasks_done_count_before_break + 1
+
 
     def get_avaliable_time(self):
         return self.next_avalaible_time
@@ -19,10 +56,23 @@ class WorkerClass:
         avaliable = format_time(self.next_avalaible_time)
         f = f'woker start {start} end {end} avaliabe {avaliable}'
         return f
+    def get_utilisation(self):
+        return self.total_busy_time/(self.end_time - self.start_time)
+
+    def isLunchTime(self,task_start_time, task_finish_time):
+        if self.stage == paras[batch_stage_idx_str]: return
+        task_inveral = pd.Interval(task_start_time, task_finish_time)
+        lunch_interval = pd.Interval(self.lunch_start_time, self.lunch_end_time)
+        isLunch = lunch_interval.overlaps(task_inveral)
+        if isLunch:
+            # make the avaliable time pass lunch
+            self.next_avalaible_time = self.lunch_end_time
+
+
 
 class WokrerCollection:
-    def __init__(self, stage, nb_worker, start_time, end_time):
-        self.workers = [WorkerClass(start_time, end_time) for i in range(nb_worker)]
+    def __init__(self, stage, nb_worker, start_time, end_time, lunch_start_time, lunch_end_time):
+        self.workers = [WorkerClass(start_time, end_time, lunch_start_time, lunch_end_time, stage) for i in range(nb_worker)]
         self.stage = stage
         self.start = format_time(start_time)
         self.end = format_time(end_time)
@@ -37,21 +87,39 @@ class WokrerCollection:
     
         return ('\n').join(o for o in output)
 
+    def average_utilisation(self):
+        average = 0
+        for worker in self.workers:
+            average = average + worker.get_utilisation()
+        average = average / len(self.workers)
+        return average
+
     def next_avaliable_worker(self, ready_time, duration):
         next_avalible_time = None
         next_worker = None
         for worker in self.workers:
             #if worker.get_avaliable_time() < ready_time: continue
-            task_start_time = max(ready_time, worker.get_avaliable_time())
+            # if task ready time is during lunch time, avalible time is 12pm, task start time is task ready time
+            # it overlap with lunch time, so make the avalible time for that worker to be after lunch time for this task
+            # if task ready time is before lunch, avalible time is during lunch time, task start time is during lunch time, again overlap, make avalible time after lunch
+
+            task_start_time = max(ready_time, worker.next_avalaible_time)
             task_finished_time = task_start_time + duration
+            worker.isLunchTime(task_start_time, task_finished_time)
+            task_start_time = max(ready_time, worker.next_avalaible_time)
+            task_finished_time = task_start_time + duration
+
             if task_finished_time > worker.end_time: continue
+            # if this job overlap lunch time, pretend this worker is avalible after lunch
+
+            worker.isLunchTime(task_start_time, task_finished_time)
 
             if next_avalible_time is None:
-                next_avalible_time = worker.get_avaliable_time()
+                next_avalible_time = worker.next_avalaible_time
                 next_worker = worker
             else:
-                if worker.get_avaliable_time() < next_avalible_time :
-                    next_avalible_time = worker.get_avaliable_time()
+                if worker.next_avalaible_time < next_avalible_time :
+                    next_avalible_time = worker.next_avalaible_time
                     next_worker = worker
         return next_worker
 

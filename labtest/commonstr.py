@@ -72,17 +72,29 @@ def format_staff_time(value):
 
 shift_patterns = {}
 staffing = {}
-staff_interval = 2
-for step in range(0,6):
+staff_interval = 4
+for step in range(0,3):
     start = 8 + staff_interval*step
     end = start + staff_interval
+    if end > 19: end = 18
     start_str = format_staff_time(start)
     end_str = format_staff_time(end)
 
     shift = shift_pattern_type(start=start, start_str=start_str, end=end, end_str = end_str)
     shift_patterns[step] = shift
     # for now , make staffing same
-    staffing[step] = {0: 5, 1:12, 2:1000, 3:7, 4:4}
+    staffing[step] = {0: 1, 1:4, 2:1000, 3:4, 4:1}
+
+    if step==1:
+        staffing[step][3] = 1
+
+    if step==3:
+        staffing[step][3] = 2
+    if step==4:
+        staffing[step][3] = 1
+
+# how many samples each woker can do each hour
+capacity_before_break = {0: 6, 1:6, 2:1000, 3: 6, 4:6}
 
 min_shift_key = min(shift_patterns)
 max_shift_key = max(shift_patterns)
@@ -91,13 +103,21 @@ max_shift_key = max(shift_patterns)
 day_data_windows = {} # index by day, save array of data windows
 for day in range(0,7):
     day_value = 17 + day
+    yester_day = day_value - 1
+    if day_value == 22:
+        day_value = 24
+        yester_day = 21
+    elif day_value == 23:
+        day_value = 25
+        yester_day = 24
+
     data_start_loading = f'2021-05-{day_value}'
     data_finish_loading = f'2021-05-{day_value}'
     data_windows = []
     for key, value in shift_patterns.items():
         if key == 0:
             # first shift, load all data from yesterday's last shift time to this shift's end time
-            day_start_value = 16 + day
+            day_start_value = yester_day
             data_start_loading = ' '.join([f'2021-05-{day_start_value}', shift_patterns[max_shift_key].end_str])
             data_end_loading = ' '.join([f'2021-05-{day_value}', value.end_str])
         else:
