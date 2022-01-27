@@ -73,25 +73,21 @@ def format_staff_time(value):
 shift_patterns = {}
 staffing = {}
 staff_interval = 4
-for step in range(0,3):
-    start = 8 + staff_interval*step
-    end = start + staff_interval
-    if end > 19: end = 18
-    start_str = format_staff_time(start)
-    end_str = format_staff_time(end)
+nb_days = 5
+for day in range(nb_days):
+    for step in range(0,3):
+        start = 8 + staff_interval*step
+        end = start + staff_interval
+        if end > 19: end = 18
+        start_str = format_staff_time(start)
+        end_str = format_staff_time(end)
 
-    shift = shift_pattern_type(start=start, start_str=start_str, end=end, end_str = end_str)
-    shift_patterns[step] = shift
-    # for now , make staffing same
-    staffing[step] = {0: 1, 1:4, 2:1000, 3:4, 4:1}
+        shift = shift_pattern_type(start=start, start_str=start_str, end=end, end_str = end_str)
+        shift_patterns[step] = shift
+        # for now , make staffing same
+        staffing[day, step] = {0: 1, 1:2, 2:1000, 3:2, 4:2}
 
-    if step==1:
-        staffing[step][3] = 1
 
-    if step==3:
-        staffing[step][3] = 2
-    if step==4:
-        staffing[step][3] = 1
 
 # how many samples each woker can do each hour
 capacity_before_break = {0: 6, 1:6, 2:1000, 3: 6, 4:6}
@@ -101,7 +97,7 @@ max_shift_key = max(shift_patterns)
 
 # create windows for loading data
 day_data_windows = {} # index by day, save array of data windows
-for day in range(0,7):
+for day in range(0,nb_days):
     day_value = 17 + day
     yester_day = day_value - 1
     if day_value == 22:
@@ -177,7 +173,7 @@ paras = {
     'lunch_used_embeddings': 0,
     'night_used_embeddings': 0,
     'unfinished': {},  # unfinished job from befor b4
-    max_job_str: 500,
+    max_job_str: 460,
     'days': 5,
     'start': 8,  # start time for non embedding stage
     'end': 21.5,  # end time for non embedding stage,  8pm - 5am

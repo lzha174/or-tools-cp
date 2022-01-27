@@ -1,4 +1,5 @@
 import collections
+import copy
 
 from ortools.sat.python import cp_model
 
@@ -309,7 +310,8 @@ def add_finished_stats(row, finished_case):
 logstr = []
 
 
-def record_result():
+def record_result(start_date = 18):
+    end_date = start_date + 1
     result_df = pd.DataFrame(paras['result'],
                              columns=['case_key', 'case_name', 'client', 'case_stage_rank', 'start', 'end',
                                       'duration', 'ready_time'])
@@ -317,6 +319,7 @@ def record_result():
     result_df = result_df.sort_values(["case_key", "case_stage_rank"], ascending=(False, True))
     result_df.to_csv('out.csv', index=False)
     print(result_df.head)
+    print('im here ')
 
     finished_case = []
 
@@ -335,8 +338,8 @@ def record_result():
 
     # df.to_csv('readty.csv', index =False)
     # do stats after warmup and b4 cool down periord, all jobs whose ready time bewteen thewse are considered finished?
-    stats_start_ready_date = '2021-05-18 00:00:00'
-    stat_end_ready_date = '2021-05-21 00:00:00'
+    stats_start_ready_date = f'2021-05-{start_date} 00:00:00'
+    stat_end_ready_date = f'2021-05-{end_date} 00:00:00'
     stats_df = result_df[
         (result_df.min_ready_time >= stats_start_ready_date) & (result_df.min_ready_time < stat_end_ready_date)]
     stats_df = stats_df.sort_values(["case_key", "case_stage_rank"], ascending=(True, True))
@@ -347,7 +350,7 @@ def record_result():
     tmp.apply(add_finished_stats, args=(finished_case,), axis=1)
     # get case_key
 
-    print('finished case', finished_case)
+    #print('finished case', finished_case)
     finished = stats_df[stats_df['case_key'].isin(finished_case)]
     finished.to_csv('stats_out.csv', index=False)
 
@@ -356,18 +359,18 @@ def record_result():
     ready_time_df = finished.groupby(by='case_key').ready_time.min()
     max_end_time_df = finished.groupby(by='case_key').end.max()
 
-    print(max_end_time_df, ready_time_df)
-    print(max_end_time_df - ready_time_df)
+    #print(max_end_time_df, ready_time_df)
+    #print(max_end_time_df - ready_time_df)
 
     total_duration_df = pd.DataFrame(max_end_time_df - ready_time_df, columns=['optimised_duration'])
     print('or average', total_duration_df['optimised_duration'].mean())
     logstr.append('average {} \n'.format(total_duration_df['optimised_duration'].mean()))
     staffingconfig = []
-    for key, value in staffing[2].items():
+    for key, value in staffing[0, 2].items():
         s = f'{key} : {value} \n'
         staffingconfig.append(s)
     staffingconfig.append('average {} \n'.format(total_duration_df['optimised_duration'].mean()))
-    write_to_file('log.txt', staffingconfig)
+    #write_to_file('log.txt', staffingconfig)
 
     bench_duration = {}
     for key in finished_case:
@@ -389,13 +392,13 @@ def record_result():
 
         f = df[df.case_stage_rank==1]
         f = f[(f.work_ready_timestamp > stats_start_ready_date) & (f.work_ready_timestamp < stat_end_ready_date)]
-        print(stats_start_ready_date, len(f.index))
+        #print(stats_start_ready_date, len(f.index))
 
         f_finished = stats_df[stats_df.case_stage_rank == 1]
         f_finished = f_finished[(f_finished.min_ready_time > stats_start_ready_date) & (f_finished.min_ready_time < stat_end_ready_date)]
-        print(stats_start_ready_date+' finished ', len(f_finished.index))
+        #print(stats_start_ready_date+' finished ', len(f_finished.index))
 
-
+    return total_duration_df['optimised_duration'].mean()
 
 # write_to_file(logstr)
 
@@ -419,7 +422,7 @@ allJobs = JobCollection()
 def define_workers(day_index = 0, period = 2):
     # define workers for each stage
     global stage_workers
-    
+    capacity = paras['staffing'][day_index, period]
     for stage in paras[idx_to_name_client_str]:
         starts_time = int(shift_patterns[period].start * seconds_per_hour + day_index * day_in_seconds)
         ends_time = int(shift_patterns[period].end * seconds_per_hour + day_index * day_in_seconds)
@@ -427,7 +430,6 @@ def define_workers(day_index = 0, period = 2):
         lunch_end_time = 14 * seconds_per_hour + day_index * day_in_seconds
 
         if stage != paras[batch_stage_idx_str]:
-            capacity = staffing[period]
             stage_workers[stage] = WokrerCollection(stage, capacity[stage], starts_time, ends_time, lunch_start_time, lunch_end_time)
             #print(stage_workers[stage])
         else:
@@ -572,12 +574,12 @@ def assign_for_shift(day_index = 0, period=2):
             paras['utilisation'].append(utilisation)
 
 # now try to assign jobs to workers at each stage
-def assign_model():
+def assign_model(current_staffing, day_index_local = 1):
 
-
+    paras['staffing'] = current_staffing
     paras['result'] = []
     paras['utilisation'] = []
-
+    current_day = 17 + day_index_local
     global job_data
     for day, data_windows in day_data_windows.items():
         job_today = 0
@@ -589,22 +591,102 @@ def assign_model():
             paras['full'] = False
             load_new_day(df, day, idx)
             job_today = job_today +  len(job_data)
-            print('total jobs {} for day {} period {} is {}'.format(data_window, day, idx, len(job_data)))
+            #print('total jobs {} for day {} period {} is {}'.format(data_window, day, idx, len(job_data)))
             #if (len(job_data) == 0): continue
             define_jobs()
             define_workers(day, idx)
             assign_for_shift(day, idx)
-        print('todao job is ', job_today)
-        print('night used', paras['night_used_embeddings'])
-        print('lunch used', paras['lunch_used_embeddings'])
-    record_result()
+        #print('todao job is ', job_today)
+        #print('night used', paras['night_used_embeddings'])
+        #print('lunch used', paras['lunch_used_embeddings'])
+    average_time = record_result(current_day)
+    return average_time
 
 
-assign_model()
+#assign_model(staffing)
+
+# i want to define a simple local search for a day's shift? fix all other day's shift
+def shift_local_search():
+
+    paras['result'] = []
+    paras['utilisation'] = []
+    paras['staffing'] = None
+    nb_staff_to_add = 6
+
+    logstr = []
+    day = 1
+
+    while day <=2:
+        print ('im at day ', day)
+        current_average = assign_model(staffing, day)
+        logstr.append(f'current average before adding staff for day {day} is {current_average}')
+        for i in range(nb_staff_to_add):
+            outstr = f'add staff {i}\n'
+            logstr.append(outstr)
+        # say i want to add one more staff, i want to know add to which stage
+            stage_to_search = [0, 1,3, 4]
+            #improvement = {}
+
+
+            # add 1 worker to the best shift, in each shift , find the best stage
+            max_improvment_shift = -1e15
+            best_shift = None
+            best_average_shift = None
+            best_shift_stage = None
+            for shift_period in range(max_shift_key + 1):
+                logstr.append(f'go through shift {shift_period}\n')
+
+                max_improvment_this_shift = -1e15
+                best_average_this_shift = None
+                best_stage_this_shift = None
+                # given a shift period, find the best stage to add a worker
+
+
+                for s in stage_to_search:
+                    temp_staffing = copy.deepcopy(staffing)
+
+                    temp_staffing[day, shift_period][s] = temp_staffing[day, shift_period][s] + 1
+                    #print('current staffing', temp_staffing)
+                    new_average = assign_model(temp_staffing, day)
+                    improvement =  current_average - new_average
+                    to_seconds = improvement.total_seconds()
+                    print('to seconds', to_seconds)
+                    if to_seconds > 0 and to_seconds > max_improvment_this_shift:
+                        max_improvment_this_shift = to_seconds
+                        best_stage_this_shift = s
+                        best_average_this_shift = new_average
+
+                if max_improvment_this_shift > max_improvment_shift:
+
+                    max_improvment_shift = max_improvment_this_shift
+                    best_shift = shift_period
+                    best_average_shift = best_average_this_shift
+                    best_shift_stage = best_stage_this_shift
+
+
+            if best_shift is not None:
+                logstr.append(f'best shift is {best_shift} best stage is {best_shift_stage}\n')
+                logstr.append(f'best improvment is {best_average_shift}\n')
+                staffing[day, best_shift][best_shift_stage] = staffing[day, best_shift][best_shift_stage] + 1
+                current_average = best_average_shift
+                print(current_average)
+            for shift_period in range(max_shift_key + 1):
+                for s in stage_to_search:
+                    logstr.append(f'day {day} period {shift_period} stage {s} staff are {staffing[day, shift_period][s]}\n')
+        day = day + 1
+    write_to_file('log.txt', logstr)
+
+
+def repeat_local_search():
+    counter = 0
+    while counter < 2:
+        shift_local_search()
+        counter = counter + 1
+
+repeat_local_search()
 
 
 
 
-
-# if I add a wokrer, I want to know which stage I should add to maximise improvement
+    # if I add a wokrer, I want to know which stage I should add to maximise improvement
 
