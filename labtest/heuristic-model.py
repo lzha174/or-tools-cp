@@ -1,22 +1,12 @@
-import collections
 import copy
 
-from ortools.sat.python import cp_model
-
-from drawing import draw
-
-import pandas as pd
-import numpy as np
-from shift_model import *
-from commonstr import *
 from schedulingclasses import *
-import openpyxl
+from utilisation_plot import *
 
-task_type = collections.namedtuple('task', 'case_key_idx client_idx priority_idx duration ready_time order first_task_ready_time')
+task_type = collections.namedtuple('task',
+                                   'case_key_idx client_idx priority_idx duration ready_time order first_task_ready_time')
 
 job_data = {}  # key by key_idx, inside need to store tasks in order which may have same tasks at different stage
-
-
 
 
 # i want to find max work time at evening
@@ -30,164 +20,6 @@ def examine_case(case_idx, day_index=0):
         duration = task.duration
         ready = format_time(task.ready_time)
         print(f'client {client} priority {priority} duration {duration} ready {ready} ready {task.ready_time}')
-
-
-def load_real_data():
-    df = pd.read_csv("5-day.csv")
-    df['start_timestamp'] = pd.to_datetime(df['start_timestamp'], format='%Y-%m-%d %H:%M:%S')
-    df['end_timestamp'] = pd.to_datetime(df['end_timestamp'], format='%Y-%m-%d %H:%M:%S')
-    df['work_ready_timestamp'] = pd.to_datetime(df['work_ready_timestamp'], format='%Y-%m-%d %H:%M:%S')
-    # https://www.kite.com/python/answers/how-to-find-the-number-of-seconds-between-two-datetime-objects-in-python
-    print(df.work_ready_timestamp.head(3))
-
-    print(df.head(3))
-    past_date = pd.to_datetime('17/05/2021 00:00')
-    df['case_priority'].fillna(1, inplace=True)
-    df['duration'] = df['end_timestamp'] - df["start_timestamp"]
-    df['duration_sec'] = df['duration'] / np.timedelta64(1, 's')
-
-    df['ready_time_sec'] = df['work_ready_timestamp'].apply(lambda x: (x - past_date).total_seconds())
-
-    f = df[df.case_key == 'ff65e4c1533550f73c6986d629fad87cbb9b75c1aab469bc8b174f15862ee65b']
-    print('f is ', f['work_ready_timestamp'].values, f['ready_time_sec'].values)
-
-    # remove jobs that has more than 2 embeddings, first need to count
-    # count how many embeeddings for each key
-    # first find all rows whose client is embeddings
-
-    df['remove_unfinished'] = False
-
-    # i want to remove cases whose signout is not included in the data
-    # first find the last stage client
-    f = dict(df.groupby('case_key').case_stage_rank.max())
-    # find max value row index?
-    # print(f)
-
-    for key, value in f.items():
-        # find each subframe
-        temp = df[df.case_key == key]
-        temp = temp[temp.case_stage_rank == value].client.tolist()
-        # print(temp)
-        if 'Signout' not in temp:
-            df.loc[df.case_key == key, 'remove_unfinished'] = True
-            # print(f'remove unfinished case {key}')
-    df.drop(df[df.remove_unfinished == True].index, inplace=True)
-
-    f = df[df.client == 'Embedding']
-    f = f.groupby(by='case_key').client.value_counts()
-    count_dict = {}
-    # create a dict of case_key, embedding value count
-    for i, v in f.iteritems():
-        # print('index: ', i[0], 'value: ', v)
-        count_dict[i[0]] = v
-        # if v>=3: print (f'remove case {i}')
-
-    df['embedding_count'] = df['case_key']
-    df['embedding_count'] = df["embedding_count"].map(count_dict)
-
-    # most embedding has no mor ethen 2 repeats, remove 4 3-time embeddings and 1 5-times embeddings
-    # only consider embedding less than 3 for now
-    df.drop(df[df['embedding_count'] >= 3].index, inplace=True)
-
-    df.to_csv('filtered_data.csv', index=False)
-
-    print(df["case_key"].head(2))
-    print(df.groupby(by='client').duration_sec.quantile(0.75))
-    print(df.groupby(by='client').duration_sec.describe())
-
-    # todo , only take 75% quantile duration cases
-
-    # df["client"] = df["client"].astype("category")
-    # df["case_priority"] = df["case_priority"].astype("category")
-
-    # df.drop(df[df.duration_sec < 1].index, inplace=True)
-    df.loc[(df.duration_sec < 1), 'duration_sec'] = 1
-
-    # get first stage ready time, include jobs for today's job
-
-    quantile = dict(df.groupby(by='client').duration_sec.quantile(0.75))
-    print('quantile is')
-    for key, value in quantile.items():
-        print(key, value / 60, 'mins')
-    del quantile['Embedding']
-    paras['95_quantile'] = quantile
-
-    # get first day, second day, thrid day starting jobs
-    # save jobs belong to each shift window
-    # is it ok to load tasks cant finish during this window? yes, coz end time constraint will make sure each task fall into the window
-    for key, data_windows in day_data_windows.items():
-        # index of data_window is same as shift_patterns
-        for idx, data_window in enumerate(data_windows):
-            tmp = df[df.case_stage_rank == 1]
-            tmp = tmp[
-                (tmp.work_ready_timestamp >= data_window[0]) & (tmp.work_ready_timestamp < data_window[1])].case_key
-            period_jobs = list(tmp.unique())
-            paras['day_jobs'][key, idx] = period_jobs
-
-    tmp = df[df.case_stage_rank == 1]
-    # get ready_time for the first stage
-    min_ready_time_series = dict(tmp.groupby(by='case_key').ready_time_sec.min())
-    paras['min_ready_time_series'] = min_ready_time_series
-
-    for idx, half_pair in enumerate(half_day_pairs):
-        # idx is day index
-        for period, data_range in half_pair.items():
-            tmp = df[df.case_stage_rank == 1]
-            tmp = tmp[
-                (tmp.work_ready_timestamp > data_range[0]) & (tmp.work_ready_timestamp < data_range[1])].case_key
-            period_jobs = list(tmp.unique())
-
-            paras['day_jobs'][idx, period] = period_jobs
-
-    print(df.groupby(by=['client'])['duration_sec'].describe())
-    print(df['duration_sec'].min())
-    print(df.describe())
-    print('case priority summary \n', df['case_priority'].describe())
-    clients = df['client'].unique()
-    case_priority = df['case_priority'].unique()
-    case_key = df['case_key'].unique()
-
-    # make a map
-    name_to_idx_key = {name: idx for idx, name in enumerate(case_key)}
-    idx_to_name_key = {idx: name for idx, name in enumerate(case_key)}
-
-    name_to_idx_client = {name: idx for idx, name in enumerate(clients)}
-    idx_to_name_client = {idx: name for idx, name in enumerate(clients)}
-
-    name_to_idx_priority = {name: idx for idx, name in enumerate(case_priority)}
-    idx_to_name_priority = {idx: name for idx, name in enumerate(case_priority)}
-
-    paras[name_to_idx_key_str] = name_to_idx_key
-    paras[idx_to_name_key_str] = idx_to_name_key
-
-    paras[name_to_idx_client_str] = name_to_idx_client
-    paras[idx_to_name_client_str] = idx_to_name_client
-
-    paras[name_to_idx_priority_str] = name_to_idx_priority
-    paras[idx_to_name_priority_str] = idx_to_name_priority
-
-    paras[batch_stage_idx_str] = name_to_idx_client['Embedding']
-    paras[nine_hour_priority_idx_str] = name_to_idx_priority['9 Hours']
-    paras[two_hour_priority_idx_str] = name_to_idx_priority['2 Hours']
-    # print(f'name to idx key {paras[name_to_idx_key_str] }')
-    # print(f'idx to name key {paras[idx_to_name_key_str]}')
-
-    print(f'name to idx client {paras[name_to_idx_client_str]}')
-    print(f'idx to name client {paras[idx_to_name_client_str]}')
-
-    print(f'name to idx priority {paras[name_to_idx_priority_str]}')
-    print(f'idx to name priority {paras[idx_to_name_priority_str]}')
-
-    print(f'embedding indx {paras[batch_stage_idx_str]}')
-    print(f'9 hour indx {paras[nine_hour_priority_idx_str]}')
-
-    print('total null is', df.isna().sum())
-    f = df[df['embedding_count'].isna()].case_key.unique()
-    print(f)
-
-
-
-    return df
 
 
 case_max_stages = {}
@@ -262,7 +94,7 @@ def read():
 
 def load_new_day(df, day, period):
     df.apply(row_process, args=(day, period,), axis=1)
-    #print(f'new jobs {len(job_data)}')
+    # print(f'new jobs {len(job_data)}')
     # add floatted job
     if len(paras['unfinished']) > 0:
         unfinished = paras['unfinished']
@@ -283,23 +115,6 @@ def load_new_day(df, day, period):
 df = read()
 
 
-
-def solve_period():
-    global job_data
-    for day, data_windows in day_data_windows.items():
-        if day >= 1: continue
-        # index of data_window is same as shift_patterns
-        for idx, data_window in enumerate(data_windows):
-            job_data = {}
-            paras['full'] = False
-            load_new_day(df, day, idx)
-            print('total jobs {} for day {} period {} is {}'.format(data_window, day, idx, len(job_data)))
-            if (len(job_data) == 0): continue
-
-            shift_model(paras, job_data, day, idx)
-    exit(1)
-
-
 def add_finished_stats(row, finished_case):
     case_key_index = row.case_key
     case_stage_rank = row.case_stage_rank
@@ -307,17 +122,17 @@ def add_finished_stats(row, finished_case):
         finished_case.append(case_key_index)
 
 
-logstr = []
 
-
-def record_result(start_date = 18):
+def record_result(start_date=18):
+    logstr = []
     end_date = start_date + 1
     result_df = pd.DataFrame(paras['result'],
                              columns=['case_key', 'case_name', 'client', 'case_stage_rank', 'start', 'end',
                                       'duration', 'ready_time'])
     result_df[["start", "end", "ready_time"]] = result_df[["start", "end", "ready_time"]].apply(pd.to_datetime)
     result_df = result_df.sort_values(["case_key", "case_stage_rank"], ascending=(False, True))
-    result_df.to_csv('out.csv', index=False)
+    # result_df.to_csv('out.csv', index=False)
+    to_csv(result_df, 'out.csv')
     print(result_df.head)
     print('im here ')
 
@@ -350,17 +165,18 @@ def record_result(start_date = 18):
     tmp.apply(add_finished_stats, args=(finished_case,), axis=1)
     # get case_key
 
-    #print('finished case', finished_case)
+    print('finished case', len(finished_case))
     finished = stats_df[stats_df['case_key'].isin(finished_case)]
-    finished.to_csv('stats_out.csv', index=False)
+    # finished.to_csv('stats_out.csv', index=False)
+    to_csv(finished, 'stats_out.csv')
 
     # the last stage is signout
 
     ready_time_df = finished.groupby(by='case_key').ready_time.min()
     max_end_time_df = finished.groupby(by='case_key').end.max()
 
-    #print(max_end_time_df, ready_time_df)
-    #print(max_end_time_df - ready_time_df)
+    # print(max_end_time_df, ready_time_df)
+    # print(max_end_time_df - ready_time_df)
 
     total_duration_df = pd.DataFrame(max_end_time_df - ready_time_df, columns=['optimised_duration'])
     print('or average', total_duration_df['optimised_duration'].mean())
@@ -370,7 +186,7 @@ def record_result(start_date = 18):
         s = f'{key} : {value} \n'
         staffingconfig.append(s)
     staffingconfig.append('average {} \n'.format(total_duration_df['optimised_duration'].mean()))
-    #write_to_file('log.txt', staffingconfig)
+    # write_to_file('log.txt', staffingconfig)
 
     bench_duration = {}
     for key in finished_case:
@@ -379,26 +195,30 @@ def record_result(start_date = 18):
     print('bench mean value', bench_duration_df.mean())
 
     result = pd.concat([total_duration_df, bench_duration_df], axis=1, join='inner')
-    result.to_csv('duration_compare.csv')
+    # result.to_csv('duration_compare.csv')
+    to_csv(result, 'duration_compare.csv')
 
     utilisation_df = pd.DataFrame(paras['utilisation'],
-                             columns=['day', 'period', 'client', 'utilisation'])
-    utilisation_df.to_csv('utilisation.csv', index=False)
+                                  columns=['day', 'period', 'client', 'utilisation'])
+    # utilisation_df.to_csv('utilisation.csv', index=False)
+    to_csv(utilisation_df, 'utilisation.csv')
+    for day in range(start_date, end_date):
+        stats_start_ready_date = f'2021-05-{day} 00:00:00'
 
-    for day in range(18,21):
-        stats_start_ready_date =f'2021-05-{day} 00:00:00'
+        stat_end_ready_date = f'2021-05-{day + 1} 00:00:00'
 
-        stat_end_ready_date = f'2021-05-{day+1} 00:00:00'
-
-        f = df[df.case_stage_rank==1]
+        f = df[df.case_stage_rank == 1]
         f = f[(f.work_ready_timestamp > stats_start_ready_date) & (f.work_ready_timestamp < stat_end_ready_date)]
-        #print(stats_start_ready_date, len(f.index))
+        print(stats_start_ready_date, len(f.index))
 
         f_finished = stats_df[stats_df.case_stage_rank == 1]
-        f_finished = f_finished[(f_finished.min_ready_time > stats_start_ready_date) & (f_finished.min_ready_time < stat_end_ready_date)]
-        #print(stats_start_ready_date+' finished ', len(f_finished.index))
+        f_finished = f_finished[
+            (f_finished.min_ready_time > stats_start_ready_date) & (f_finished.min_ready_time < stat_end_ready_date)]
+        print(stats_start_ready_date + ' finished ', len(f_finished.index))
+        assert (len(finished_case) == len(f_finished))
 
     return total_duration_df['optimised_duration'].mean()
+
 
 # write_to_file(logstr)
 
@@ -419,10 +239,53 @@ stage_workers = {}
 
 allJobs = JobCollection()
 
-def define_workers(day_index = 0, period = 2):
+
+def get_break_stats():
+    for stage in paras[idx_to_name_client_str]:
+        if stage != paras[batch_stage_idx_str]:
+            breaks = stage_workers[stage].get_break_stats()
+            print(f'for stage {stage} breaks are {breaks}')
+
+
+def get_gantt():
+    selected_day = 1
+    selected_period = 1
+    selected_stage = 1
+    selected_worker = 1
+
+    # lets build a data frame
+    data = []
+    for key in paras[workers_str]:
+        day = key[0]
+        period = key[1]
+        stage = key[2]
+        if stage == paras[batch_stage_idx_str] or stage == nigh_stage: continue
+        data = data + paras[workers_str][key].get_gantt()
+
+    result_df = pd.DataFrame(data,
+                             columns=['day', 'period', 'stage', 'worker', 'start', 'duration'])
+
+    # result_df.to_csv('worker_gantt.csv', index=False)
+    to_csv(result_df, 'worker_gantt.csv')
+
+    # i want to draw gantt chart for stage 2 worker at day 1, period 1
+    sliced_df = result_df[(result_df.day == selected_day) & (result_df.period == selected_period) &
+                          (result_df.stage == selected_stage) & (result_df.worker == selected_worker)][
+        ['start', 'duration']]
+    starts_time = int(shift_patterns[selected_period].start * seconds_per_hour + selected_day * day_in_seconds)
+    ends_time = starts_time + 5 * seconds_per_hour
+    sliced_df = sliced_df[(sliced_df.start >= starts_time) & (sliced_df.start < ends_time)]
+    print('sliced nb are ', len(sliced_df))
+    sliced_df['bar4'] = sliced_df.values.tolist()
+    output = sliced_df['bar4'].values.tolist()
+    draw_gannt(output)
+
+
+def define_workers(day_index=0, period=2):
     # define workers for each stage
     global stage_workers
     capacity = paras['staffing'][day_index, period]
+
     for stage in paras[idx_to_name_client_str]:
         starts_time = int(shift_patterns[period].start * seconds_per_hour + day_index * day_in_seconds)
         ends_time = int(shift_patterns[period].end * seconds_per_hour + day_index * day_in_seconds)
@@ -430,23 +293,34 @@ def define_workers(day_index = 0, period = 2):
         lunch_end_time = 14 * seconds_per_hour + day_index * day_in_seconds
 
         if stage != paras[batch_stage_idx_str]:
-            stage_workers[stage] = WokrerCollection(stage, capacity[stage], starts_time, ends_time, lunch_start_time, lunch_end_time)
-            #print(stage_workers[stage])
+            paras[workers_str][day_index, period, stage] = WokrerCollection(day_index, period, stage, capacity[stage],
+                                                                            starts_time, ends_time, lunch_start_time,
+                                                                            lunch_end_time)
+            stage_workers[stage] = paras[workers_str][day_index, period, stage]
+            # print(stage_workers[stage])
         else:
             capacity_used = paras['lunch_used_embeddings']
             starts_time = paras['start_emdbedding'][two_hour_idx] + day_index * day_in_seconds
             ends_time = starts_time + 2 * seconds_per_hour
-            stage_workers[stage] = WokrerCollection(stage, capacity[stage] - capacity_used, starts_time, ends_time, lunch_start_time, lunch_end_time)
-            #print(stage_workers[stage])
+            paras[workers_str][day_index, period, stage] = WokrerCollection(day_index, period, stage,
+                                                                            capacity[stage] - capacity_used,
+                                                                            starts_time, ends_time, lunch_start_time,
+                                                                            lunch_end_time)
+
+            stage_workers[stage] = paras[workers_str][day_index, period, stage]  # print(stage_workers[stage])
+
             capacity_used = paras['night_used_embeddings']
             starts_time = paras['start_emdbedding'][nine_hour_idx] + day_index * day_in_seconds
             ends_time = starts_time + 9 * seconds_per_hour
-            stage_workers[nigh_stage] = WokrerCollection(nigh_stage, capacity[stage] - capacity_used, starts_time, ends_time, lunch_start_time, lunch_end_time)
-            #print(stage_workers[nigh_stage])
+
+            paras[workers_str][day_index, period, nigh_stage] = WokrerCollection(day_index, period, nigh_stage,
+                                                                                 capacity[stage] - capacity_used,
+                                                                                 starts_time, ends_time,
+                                                                                 lunch_start_time, lunch_end_time)
+
+            stage_workers[nigh_stage] = paras[workers_str][day_index, period, nigh_stage]  # print(stage_workers[stage])
 
             # for embedding we need two stages, one for lunch one for night
-
-            
 
 
 def define_jobs():
@@ -456,12 +330,12 @@ def define_jobs():
     for job, tasks in job_data.items():
         new_job = JobClass()
         new_job.set_job(job, tasks)
-        #print(new_job)
+        # print(new_job)
         allJobs.add_job(new_job)
-    #allJobs.next_task_stage(0)
+    # allJobs.next_task_stage(0)
 
 
-def assign_for_shift(day_index = 0, period=2):
+def assign_for_shift(day_index=0, period=2):
     # now i have workers for each stage, how do i assign them?
     # keep look at the first unfinished task in each job
     # find the smallest arrival task and assign to the next avaliable worker until it is impossible to assign
@@ -479,51 +353,54 @@ def assign_for_shift(day_index = 0, period=2):
 
             if stage != paras[batch_stage_idx_str]:
                 # assign this task to next avaliable worker and mark this task finished
-                #print('ready time,', tasks.task.get_ready_time())
-                #print(f'perform on this task for job {tasks.job_key}')
+                # print('ready time,', tasks.task.get_ready_time())
+                # print(f'perform on this task for job {tasks.job_key}')
                 job_key = tasks.job_key
 
-                #print(tasks.task)
+                # print(tasks.task)
                 first_ready_time = tasks.task.get_first_task_ready_time()
                 worker = stage_workers[stage].next_avaliable_worker(tasks.task.get_ready_time(), tasks.task.duration)
-                #print('next avaliable worker')
-                #print(worker)
+                # print('next avaliable worker')
+                # print(worker)
                 if worker is not None:
                     find_a_worker = True
                     # assign this task to thie worker
                     task_start_time = max(worker.get_avaliable_time(), tasks.task.get_ready_time())
                     worker.update_avaliable_time(tasks.task.get_ready_time(), tasks.task.duration)
-                    #print('after assign')
-                    #print(worker)
+                    # print('after assign')
+                    # print(worker)
                     # mark this task finished for that job set the task interval
                     allJobs.mark_job_task_finish(tasks.job_key, task_start_time)
-                    #allJobs.show_job(tasks.job_key)
+                    # allJobs.show_job(tasks.job_key)
             else:
                 for next_task in tasks:
                     # get priority
-                    #print(f'perform on this task for job {next_task.job_key}')
-                    #print(next_task.task)
+                    # print(f'perform on this task for job {next_task.job_key}')
+                    # print(next_task.task)
                     priority = next_task.task.priority
                     if priority == paras[nine_hour_priority_idx_str]:
-                        #allJobs.show_job(next_task.job_key)
+                        # allJobs.show_job(next_task.job_key)
                         # put this into night batch
-                        #print(stage_workers[nigh_stage])
-                        worker = stage_workers[nigh_stage].next_avaliable_worker(next_task.task.get_ready_time(), next_task.task.duration)
+                        # print(stage_workers[nigh_stage])
+                        worker = stage_workers[nigh_stage].next_avaliable_worker(next_task.task.get_ready_time(),
+                                                                                 next_task.task.duration)
                         ready_time = format_time(next_task.task.get_ready_time())
-                        #print(worker, ready_time, next_task.task.duration)
+                        # print(worker, ready_time, next_task.task.duration)
                         duration = 9 * seconds_per_hour
                         if worker is not None:
                             paras['night_used_embeddings'] = paras['night_used_embeddings'] + 1
-                        #print('next avaliable worker')
-                        #print(worker)
+                        # print('next avaliable worker')
+                        # print(worker)
                     else:
                         # 2 hour prioity, put it into lunch batch if possible
                         # get next avalaible worker from two hour batch
-                        worker = stage_workers[stage].next_avaliable_worker(next_task.task.get_ready_time(), next_task.task.duration)
+                        worker = stage_workers[stage].next_avaliable_worker(next_task.task.get_ready_time(),
+                                                                            next_task.task.duration)
                         duration = 2 * seconds_per_hour
                         if worker is None:
                             # passed lunch batch
-                            worker = stage_workers[nigh_stage].next_avaliable_worker(next_task.task.get_ready_time(), next_task.task.duration)
+                            worker = stage_workers[nigh_stage].next_avaliable_worker(next_task.task.get_ready_time(),
+                                                                                     next_task.task.duration)
                             duration = 9 * seconds_per_hour
                             if worker is not None:
                                 paras['night_used_embeddings'] = paras['night_used_embeddings'] + 1
@@ -532,17 +409,17 @@ def assign_for_shift(day_index = 0, period=2):
 
                     if worker is not None:
                         find_a_worker = True
-                        #print(next_task.task)
+                        # print(next_task.task)
                         task_start_time = max(worker.get_avaliable_time(), next_task.task.get_ready_time())
                         worker.update_avaliable_time(next_task.task.get_ready_time(), duration)
                         allJobs.mark_job_task_finish(next_task.job_key, task_start_time)
-                    #allJobs.show_job(next_task.job_key)
+                    # allJobs.show_job(next_task.job_key)
             # no worker is avaliable for any current task to do, a worker is avliable if next avaliable time is before shift ending time
         if find_a_worker == False:
             have_task_to_do = False
 
     # scheduling for this period is finsihed, get utlisation
-    if day_index >=1 and day_index <=3:
+    if day_index >= 1 and day_index <= 3:
 
         if period == max_shift_key:
             utilisation = [day_index, period]
@@ -573,13 +450,16 @@ def assign_for_shift(day_index = 0, period=2):
             utilisation.append(percentage)
             paras['utilisation'].append(utilisation)
 
-# now try to assign jobs to workers at each stage
-def assign_model(current_staffing, day_index_local = 1):
 
+# now try to assign jobs to workers at each stage
+def assign_model(current_staffing, day_index_local=1):
     paras['staffing'] = current_staffing
     paras['result'] = []
     paras['utilisation'] = []
     current_day = 17 + day_index_local
+
+    paras[workers_str] = {}  # key day, period, stage, value is a collection of workers for that shift
+
     global job_data
     for day, data_windows in day_data_windows.items():
         job_today = 0
@@ -590,43 +470,45 @@ def assign_model(current_staffing, day_index_local = 1):
             job_data = {}
             paras['full'] = False
             load_new_day(df, day, idx)
-            job_today = job_today +  len(job_data)
-            #print('total jobs {} for day {} period {} is {}'.format(data_window, day, idx, len(job_data)))
-            #if (len(job_data) == 0): continue
+            job_today = job_today + len(job_data)
+            # print('total jobs {} for day {} period {} is {}'.format(data_window, day, idx, len(job_data)))
+            # if (len(job_data) == 0): continue
             define_jobs()
             define_workers(day, idx)
             assign_for_shift(day, idx)
-        #print('todao job is ', job_today)
-        #print('night used', paras['night_used_embeddings'])
-        #print('lunch used', paras['lunch_used_embeddings'])
+            #get_break_stats()
+
+            # print('todao job is ', job_today)
+        # print('night used', paras['night_used_embeddings'])
+        # print('lunch used', paras['lunch_used_embeddings'])
+    get_gantt()
     average_time = record_result(current_day)
     return average_time
 
 
-#assign_model(staffing)
+# assign_model(staffing)
 
 # i want to define a simple local search for a day's shift? fix all other day's shift
 def shift_local_search():
-
     paras['result'] = []
     paras['utilisation'] = []
     paras['staffing'] = None
-    nb_staff_to_add = 6
+    nb_staff_to_add = 5
 
     logstr = []
     day = 1
 
-    while day <=2:
-        print ('im at day ', day)
+    while day <= 2:
+        print('im at day ', day)
         current_average = assign_model(staffing, day)
+        print(f'current average {current_average}')
         logstr.append(f'current average before adding staff for day {day} is {current_average}')
         for i in range(nb_staff_to_add):
             outstr = f'add staff {i}\n'
             logstr.append(outstr)
-        # say i want to add one more staff, i want to know add to which stage
-            stage_to_search = [0, 1,3, 4]
-            #improvement = {}
-
+            # say i want to add one more staff, i want to know add to which stage
+            stage_to_search = [0, 1, 3, 4]
+            # improvement = {}
 
             # add 1 worker to the best shift, in each shift , find the best stage
             max_improvment_shift = -1e15
@@ -641,14 +523,13 @@ def shift_local_search():
                 best_stage_this_shift = None
                 # given a shift period, find the best stage to add a worker
 
-
                 for s in stage_to_search:
                     temp_staffing = copy.deepcopy(staffing)
 
                     temp_staffing[day, shift_period][s] = temp_staffing[day, shift_period][s] + 1
-                    #print('current staffing', temp_staffing)
+                    # print('current staffing', temp_staffing)
                     new_average = assign_model(temp_staffing, day)
-                    improvement =  current_average - new_average
+                    improvement = current_average - new_average
                     to_seconds = improvement.total_seconds()
                     print('to seconds', to_seconds)
                     if to_seconds > 0 and to_seconds > max_improvment_this_shift:
@@ -657,12 +538,10 @@ def shift_local_search():
                         best_average_this_shift = new_average
 
                 if max_improvment_this_shift > max_improvment_shift:
-
                     max_improvment_shift = max_improvment_this_shift
                     best_shift = shift_period
                     best_average_shift = best_average_this_shift
                     best_shift_stage = best_stage_this_shift
-
 
             if best_shift is not None:
                 logstr.append(f'best shift is {best_shift} best stage is {best_shift_stage}\n')
@@ -670,9 +549,13 @@ def shift_local_search():
                 staffing[day, best_shift][best_shift_stage] = staffing[day, best_shift][best_shift_stage] + 1
                 current_average = best_average_shift
                 print(current_average)
+            else:
+                # no need to continue adding
+                break
             for shift_period in range(max_shift_key + 1):
                 for s in stage_to_search:
-                    logstr.append(f'day {day} period {shift_period} stage {s} staff are {staffing[day, shift_period][s]}\n')
+                    logstr.append(
+                        f'day {day} period {shift_period} stage {s} staff are {staffing[day, shift_period][s]}\n')
         day = day + 1
     write_to_file('log.txt', logstr)
 
@@ -683,10 +566,6 @@ def repeat_local_search():
         shift_local_search()
         counter = counter + 1
 
-repeat_local_search()
 
-
-
-
-    # if I add a wokrer, I want to know which stage I should add to maximise improvement
-
+# repeat_local_search()
+assign_model(staffing, 1)

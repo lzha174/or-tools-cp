@@ -1,9 +1,11 @@
-import pandas as pd
 
 from commonstr import *
 
 class WorkerClass:
-    def __init__(self, start_time, end_time, lunch_start_time, lunch_end_time, stage):
+    def __init__(self, idx, day, period, start_time, end_time, lunch_start_time, lunch_end_time, stage):
+        self.idx = idx
+        self.day = day
+        self.period = period
         self.start_time = start_time
         self.end_time = end_time
         self.next_avalaible_time = self.start_time
@@ -14,6 +16,9 @@ class WorkerClass:
         # first lunch break between 1pm -2pm
         self.lunch_start_time = lunch_start_time
         self.lunch_end_time = lunch_end_time
+        self.total_breaks = 0
+        self.task_gantt = []
+
         # I want to add a maximum nb of tasks you can do for each wokrer per hour
         if stage != paras[batch_stage_idx_str] and stage != nigh_stage:
             self.stage = stage
@@ -30,18 +35,22 @@ class WorkerClass:
         # how to make avalible time jump out of ounch time
         self.next_avalaible_time = task_start_time + duration
 
+        task_gantt = [self.day, self.period, self.stage, self.idx, task_start_time, duration]
+        self.task_gantt.append(task_gantt)
 
-        if self.stage != paras[batch_stage_idx_str]:
+
+        if self.stage != paras[batch_stage_idx_str] and self.stage != nigh_stage:
             # remember the first task time after last break
             if self.first_task_start_before_break is None:
                 self.first_task_start_before_break = task_start_time
                 self.tasks_done_count_before_break = self.tasks_done_count_before_break + 1
             # I am tired, take a break reset
-            elif task_start_time - self.first_task_start_before_break < seconds_per_hour and self.tasks_done_count_before_break >= capacity_before_break[self.stage]:
+            elif self.tasks_done_count_before_break >= capacity_before_break[self.stage]:
                 # 10 mins break
                 self.next_avalaible_time = self.next_avalaible_time + 600
                 self.tasks_done_count_before_break = 0
                 self.first_task_start_before_break = None
+                self.total_breaks = self.total_breaks + 1
             # I have not done enoughy
             else:
                 self.tasks_done_count_before_break = self.tasks_done_count_before_break + 1
@@ -71,11 +80,13 @@ class WorkerClass:
 
 
 class WokrerCollection:
-    def __init__(self, stage, nb_worker, start_time, end_time, lunch_start_time, lunch_end_time):
-        self.workers = [WorkerClass(start_time, end_time, lunch_start_time, lunch_end_time, stage) for i in range(nb_worker)]
+    def __init__(self, day, period, stage, nb_worker, start_time, end_time, lunch_start_time, lunch_end_time):
+        self.workers = [WorkerClass(i, day, period, start_time, end_time, lunch_start_time, lunch_end_time, stage) for i in range(nb_worker)]
         self.stage = stage
         self.start = format_time(start_time)
         self.end = format_time(end_time)
+        self.day = day
+        self.period = period
     
     def __str__(self):
         output = [f'stage {self.stage} with {len(self.workers)} workers start {self.start} end {self.end}']
@@ -86,6 +97,19 @@ class WokrerCollection:
                 output.append(w.__str__())
     
         return ('\n').join(o for o in output)
+
+    def get_break_stats(self):
+        output = []
+        for w in self.workers:
+            if self.stage != paras[batch_stage_idx_str] and self.stage != nigh_stage:
+                output.append(w.total_breaks)
+        return output
+
+    def get_gantt(self):
+        output = []
+        for w in self.workers:
+            output = output + w.task_gantt
+        return output
 
     def average_utilisation(self):
         average = 0
