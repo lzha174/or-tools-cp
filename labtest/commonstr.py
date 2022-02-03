@@ -42,22 +42,10 @@ lunch_str = 'lunch'
 workers_str = 'workers'
 
 half_day_pairs = []
-for day in range(0,5):
 
-    date = 17 + day
-    next_day = date + 1
-    s = f'2021-05-{date} 00:00:00'
-    s_mid = f'2021-05-{date} 14:00:00'
-    s_next = f'2021-05-{next_day} 00:00:00'
-    value = {}
-    value[morning_str] = (s, s_mid)
-    value[lunch_str] = (s_mid, s_next)
-    half_day_pairs.append(value)
 # index is patten index, value is start time and ending time
 shift_pattern_type = collections.namedtuple('shift', 'start start_str end end_str')
-shift_patterns = {0:shift_pattern_type(start=6, start_str='06:00', end=10, end_str='10:00'), 1: shift_pattern_type(start=10, start_str='10:00',
-                                                                                                                   end=14, end_str='14:00'),
-                  2:shift_pattern_type(start=14, start_str='14:00', end=16, end_str='16:00' )}
+
 
 
 # key is shift pattern index, value is staffing for each stage during this period
@@ -76,9 +64,10 @@ def format_staff_time(value):
 shift_patterns = {}
 staffing = {}
 staff_interval = 4
-nb_days = 8
+nb_days = 7
+nb_shifts = 3
 for day in range(nb_days):
-    for step in range(0,3):
+    for step in range(0,nb_shifts):
         start = 8 + staff_interval*step
         end = start + staff_interval
         if end > 19: end = 18
@@ -90,13 +79,23 @@ for day in range(nb_days):
         # for now , make staffing same
         staffing[day, step] = {0: 1, 1:3, 2:1000, 3:3, 4:3}
 
+def staffing_to_csv():
+    output = []
+    for day in range(nb_days):
+        for shift in range(nb_shifts):
+            for stage, value in staffing[day,shift].items():
+                data = [day, shift, stage, value]
+                output.append(data)
 
+    result_df = pd.DataFrame(output,
+                             columns=['day', 'shift', 'stage', 'value'])
+    to_csv(result_df, 'staff.csv')
 
 # how many samples each woker can do each hour
 capacity_before_break = {0: 8, 1:8, 2:1000, 3: 8, 4:8}
 
-min_shift_key = min(shift_patterns)
-max_shift_key = max(shift_patterns)
+min_shift_key = 0
+max_shift_key = nb_shifts - 1
 
 # create windows for loading data
 day_data_windows = {} # index by day, save array of data windows

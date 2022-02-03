@@ -87,11 +87,6 @@ def row_process(row, day, period):
     paras['last_inserted_case'] = case_key_idx
 
 
-def read():
-    df = load_real_data()
-    return df
-
-
 def load_new_day(df, day, period):
     df.apply(row_process, args=(day, period,), axis=1)
     # print(f'new jobs {len(job_data)}')
@@ -112,7 +107,7 @@ def load_new_day(df, day, period):
     print(f'nb jobs {len(job_data)}')
 
 
-df = read()
+df = load_real_data()
 
 
 def add_finished_stats(row, finished_case):
@@ -215,7 +210,8 @@ def record_result(start_date=18):
         f_finished = f_finished[
             (f_finished.min_ready_time > stats_start_ready_date) & (f_finished.min_ready_time < stat_end_ready_date)]
         print(stats_start_ready_date + ' finished ', len(f_finished.index))
-        assert (len(finished_case) == len(f_finished))
+        # I am happy if a few of them is not finished in my rolling window for local serach
+        assert (len(finished_case) > len(f_finished) - 5)
 
     return total_duration_df['optimised_duration'].mean()
 
@@ -458,10 +454,15 @@ def assign_model(current_staffing, day_index_local=1):
     paras['utilisation'] = []
     current_day = 17 + day_index_local
 
+    data_rolling_window_lower_bound = day_index_local -1
+    data_rolling_window_upper_bound = day_index_local + 3
+
     paras[workers_str] = {}  # key day, period, stage, value is a collection of workers for that shift
 
     global job_data
     for day, data_windows in day_data_windows.items():
+        if day < data_rolling_window_lower_bound: continue
+        if day > data_rolling_window_upper_bound: break
         job_today = 0
         paras['night_used_embeddings'] = 0
         paras['lunch_used_embeddings'] = 0
@@ -481,7 +482,7 @@ def assign_model(current_staffing, day_index_local=1):
             # print('todao job is ', job_today)
         # print('night used', paras['night_used_embeddings'])
         # print('lunch used', paras['lunch_used_embeddings'])
-    get_gantt()
+    #get_gantt()
     average_time = record_result(current_day)
     return average_time
 
@@ -496,7 +497,7 @@ def shift_local_search():
     nb_staff_to_add = 5
 
     logstr = []
-    day = 1
+    day = 2
 
     while day <= 2:
         print('im at day ', day)
@@ -549,13 +550,18 @@ def shift_local_search():
                 staffing[day, best_shift][best_shift_stage] = staffing[day, best_shift][best_shift_stage] + 1
                 current_average = best_average_shift
                 print(current_average)
+                staffing_to_csv()
             else:
                 # no need to continue adding
                 break
+
             for shift_period in range(max_shift_key + 1):
                 for s in stage_to_search:
                     logstr.append(
                         f'day {day} period {shift_period} stage {s} staff are {staffing[day, shift_period][s]}\n')
+
+
+
         day = day + 1
     write_to_file('log.txt', logstr)
 
@@ -567,5 +573,5 @@ def repeat_local_search():
         counter = counter + 1
 
 
-# repeat_local_search()
+#repeat_local_search()
 assign_model(staffing, 1)
