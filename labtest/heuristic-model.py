@@ -497,9 +497,9 @@ def shift_local_search():
     nb_staff_to_add = 5
 
     logstr = []
-    day = 2
+    day = 1
 
-    while day <= 2:
+    while day <= 1:
         print('im at day ', day)
         current_average = assign_model(staffing, day)
         print(f'current average {current_average}')

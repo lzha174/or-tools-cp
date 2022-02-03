@@ -17,6 +17,11 @@ batch_stage_idx_str = 'batch_stage_idx'
 nine_hour_priority_idx_str = 'nine_hour_priority_idx'
 two_hour_priority_idx_str = 'two_hour_priority_idx'
 
+name_to_idx_user_str = 'name_to_idx_user'
+idx_to_name_usr_str = 'idx_to_name_user'
+
+
+
 max_job_str = 'max_job'
 job_data_dict_str = 'job_data'
 
@@ -46,6 +51,7 @@ half_day_pairs = []
 # index is patten index, value is start time and ending time
 shift_pattern_type = collections.namedtuple('shift', 'start start_str end end_str')
 
+worker_profile_type = collections.namedtuple('profile', 'idx skillset')
 
 
 # key is shift pattern index, value is staffing for each stage during this period
@@ -89,6 +95,8 @@ def staffing_to_csv():
 
     result_df = pd.DataFrame(output,
                              columns=['day', 'shift', 'stage', 'value'])
+    # dont need embedding
+    result_df = result_df[result_df.stage != 2]
     to_csv(result_df, 'staff.csv')
 
 # how many samples each woker can do each hour
