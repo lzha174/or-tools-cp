@@ -17,6 +17,24 @@ def row_process(row, worker_profile):
     worker_profile[idx] = worker_profile_type(idx=idx, skillset=skillset)
 
 
+def station_row_process(row, station_demand):
+    if row.stage == 2: return
+    day = row.day
+    shift = row.period
+    stage = row.stage
+    value = row.value
+    #print('day = ', day, 'shift=', shift)
+    station_demand[day, shift, stage] = value
+
+
+def load_station_demand():
+    df = pd.read_csv("staff.csv")
+    station_demand = {}
+    df.apply(station_row_process, args=(station_demand,), axis = 1)
+    #for key in station_demand:
+        #print('key = ', key, 'value =', station_demand[key])
+    return station_demand
+
 def load_profile():
     df = pd.read_csv("worker.csv")
     print(df.info())
@@ -43,20 +61,22 @@ def model():
 
     stage_names = {0: 'accession', 1: 'gross', 3: 'section', 4: 'signout'}
 
+    station_demand = load_station_demand()
+
     nbDays = 5
+
     # just read in the staffing for now
     stages = [0, 1, 3, 4]
     shift_staffing = {}
-    for key, value in staffing.items():
+    for key, value in station_demand.items():
         day = key[0]
         # plan schedule for 5 days
         if day == nbDays: break
+
         shift_period = key[1]
-        for stage, demand in value.items():
-            if stage not in stages: continue
-            # hack
-            demand = 4
-            shift_staffing[day, shift_period, stage] = demand
+        stage = key[2]
+        demand = value
+        shift_staffing[day, shift_period, stage] = demand
     # define workers
     # each worker has a certain skillset?, each worker is avaliable on certain days? each worker can do no more than 2 shifts a day, they must be contineious?
     roster_type = collections.namedtuple('roster', 'skillset avaliable cost')
@@ -208,4 +228,5 @@ def model():
 
 
 model()
+#load_station_demand()
 # load_profile()

@@ -156,6 +156,7 @@ def record_result(start_date=18):
 
     # how to i calculate total in-system time for each case
     # group by case_key, find minimum ready_time, find maximum end_time, difference is the total in system time
+    # some jobs may not end yet, the sign is that the last stage is finished, it is a signout
     tmp = stats_df[stats_df['client'] == 'Signout']
     tmp.apply(add_finished_stats, args=(finished_case,), axis=1)
     # get case_key
@@ -176,11 +177,7 @@ def record_result(start_date=18):
     total_duration_df = pd.DataFrame(max_end_time_df - ready_time_df, columns=['optimised_duration'])
     print('or average', total_duration_df['optimised_duration'].mean())
     logstr.append('average {} \n'.format(total_duration_df['optimised_duration'].mean()))
-    staffingconfig = []
-    for key, value in staffing[0, 2].items():
-        s = f'{key} : {value} \n'
-        staffingconfig.append(s)
-    staffingconfig.append('average {} \n'.format(total_duration_df['optimised_duration'].mean()))
+
     # write_to_file('log.txt', staffingconfig)
 
     bench_duration = {}
@@ -204,14 +201,15 @@ def record_result(start_date=18):
 
         f = df[df.case_stage_rank == 1]
         f = f[(f.work_ready_timestamp > stats_start_ready_date) & (f.work_ready_timestamp < stat_end_ready_date)]
-        print(stats_start_ready_date, len(f.index))
+        # how many jobs in this day
+        print(stats_start_ready_date, 'total jobs', len(f.index))
 
         f_finished = stats_df[stats_df.case_stage_rank == 1]
         f_finished = f_finished[
             (f_finished.min_ready_time > stats_start_ready_date) & (f_finished.min_ready_time < stat_end_ready_date)]
-        print(stats_start_ready_date + ' finished ', len(f_finished.index))
+        print(stats_start_ready_date + ' jobs that are in the scheduling ', len(f_finished.index))
         # I am happy if a few of them is not finished in my rolling window for local serach
-        assert (len(finished_case) > len(f_finished) - 5)
+        assert (len(finished_case) > 0.9 *len(f_finished))
 
     return total_duration_df['optimised_duration'].mean()
 

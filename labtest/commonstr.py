@@ -94,13 +94,13 @@ def staffing_to_csv():
                 output.append(data)
 
     result_df = pd.DataFrame(output,
-                             columns=['day', 'shift', 'stage', 'value'])
+                             columns=['day', 'period', 'stage', 'value'])
     # dont need embedding
     result_df = result_df[result_df.stage != 2]
     to_csv(result_df, 'staff.csv')
 
 # how many samples each woker can do each hour
-capacity_before_break = {0: 8, 1:8, 2:1000, 3: 8, 4:8}
+capacity_before_break = {0: 6, 1:6, 2:1000, 3: 6, 4:6}
 
 min_shift_key = 0
 max_shift_key = nb_shifts - 1
