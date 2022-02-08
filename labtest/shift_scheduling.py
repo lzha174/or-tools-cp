@@ -31,6 +31,7 @@ def load_station_demand():
     df = pd.read_csv("staff.csv")
     station_demand = {}
     df.apply(station_row_process, args=(station_demand,), axis = 1)
+    print(df[df.stage == 4])
     #for key in station_demand:
         #print('key = ', key, 'value =', station_demand[key])
     return station_demand
@@ -51,7 +52,7 @@ def load_profile():
     paras[idx_to_name_usr_str] = idx_to_name_user
     return df
 
-
+# note: when uploading to notebook, copy from here, Above code should use the note book at the moment
 def model():
     # first define shifts, each shift has 4 work stations, each station has a demand
     # need a way to mark the shift is for which day during a week
@@ -70,9 +71,6 @@ def model():
     shift_staffing = {}
     for key, value in station_demand.items():
         day = key[0]
-        # plan schedule for 5 days
-        if day == nbDays: break
-
         shift_period = key[1]
         stage = key[2]
         demand = value
@@ -206,6 +204,33 @@ def model():
                                  columns=columns)
         to_csv(result_df, 'assignment.csv')
 
+        # i want to know each worker is doing what station at each shift
+        output = []
+        for w in range(nbStaff):
+            for day in range(nbDays):
+                data = [w, day]
+                for shift_period in range(nb_shifts):
+                    value = 0
+                    onStage = None
+                    for stage in stages:
+                        if day in rosterings_paras[w].avaliable and stage in rosterings_paras[w].skillset:
+                            value = solver.Value(rostering[w, day, shift_period, stage])
+                            if value:
+                                onStage = stage
+                                break
+
+                    if value:
+                            # this worker is at this station
+                        data.append(stage_names[onStage])
+                    else:
+                        data.append('off')
+                output.append(data)
+
+        shift_strs = ['shift_' + str(s) for s in range(nb_shifts)]
+        columns = ['worker', 'day'] + shift_strs
+        result_df = pd.DataFrame(output, columns=columns)
+        to_csv(result_df, 'station_worker.csv')
+
         # i want to know for each worker the shift pattern
         shift_pattern_output = {}
         for key, value in worker_is_working_shift_period.items():
@@ -225,6 +250,7 @@ def model():
         to_csv(result_df, 'worker_shift.csv')
         temp = result_df[result_df.day == 0]
         print(temp)
+
 
 
 model()

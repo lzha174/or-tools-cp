@@ -548,9 +548,10 @@ def shift_local_search():
                 staffing[day, best_shift][best_shift_stage] = staffing[day, best_shift][best_shift_stage] + 1
                 current_average = best_average_shift
                 print(current_average)
-                staffing_to_csv()
+
             else:
                 # no need to continue adding
+                staffing_to_csv(duplicate = True, use_this_day = day)
                 break
 
             for shift_period in range(max_shift_key + 1):

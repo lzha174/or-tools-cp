@@ -85,13 +85,22 @@ for day in range(nb_days):
         # for now , make staffing same
         staffing[day, step] = {0: 1, 1:3, 2:1000, 3:3, 4:3}
 
-def staffing_to_csv():
+def staffing_to_csv(duplicate, use_this_day):
     output = []
-    for day in range(nb_days):
-        for shift in range(nb_shifts):
-            for stage, value in staffing[day,shift].items():
-                data = [day, shift, stage, value]
-                output.append(data)
+    if duplicate:
+        # duplicate this day station demand to every day in this week
+        for day in range(5):
+            for shift in range(nb_shifts):
+                for stage in staffing[day, shift]:
+                    value = staffing[use_this_day, shift]
+                    data = [day, shift, stage, value ]
+                    output.append(data)
+    else:
+        for day in range(nb_days):
+            for shift in range(nb_shifts):
+                for stage, value in staffing[day,shift].items():
+                    data = [day, shift, stage, value]
+                    output.append(data)
 
     result_df = pd.DataFrame(output,
                              columns=['day', 'period', 'stage', 'value'])
@@ -100,7 +109,7 @@ def staffing_to_csv():
     to_csv(result_df, 'staff.csv')
 
 # how many samples each woker can do each hour
-capacity_before_break = {0: 6, 1:6, 2:1000, 3: 6, 4:6}
+capacity_before_break = {0: 8, 1:8, 2:1000, 3: 8, 4:8}
 
 min_shift_key = 0
 max_shift_key = nb_shifts - 1
