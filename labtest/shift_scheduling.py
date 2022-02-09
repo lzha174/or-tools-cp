@@ -36,10 +36,9 @@ def load_station_demand():
         #print('key = ', key, 'value =', station_demand[key])
     return station_demand
 
-def load_profile():
+def load_profile(worker_profile):
     df = pd.read_csv("worker.csv")
     print(df.info())
-    worker_profile = {}
 
     unused_users = ['ExternalInterface', 'system']
     df = df[~df.user.isin(unused_users)]
@@ -50,6 +49,9 @@ def load_profile():
     idx_to_name_user = {idx: name for idx, name in enumerate(users)}
     paras[name_to_idx_user_str] = name_to_idx_user
     paras[idx_to_name_usr_str] = idx_to_name_user
+
+    df.apply(row_process, args=(worker_profile,), axis=1)
+
     return df
 
 # note: when uploading to notebook, copy from here, Above code should use the note book at the moment
@@ -57,8 +59,7 @@ def model():
     # first define shifts, each shift has 4 work stations, each station has a demand
     # need a way to mark the shift is for which day during a week
     worker_profile = {}
-    df = load_profile()
-    df.apply(row_process, args=(worker_profile,), axis=1)
+    df = load_profile(worker_profile)
 
     stage_names = {0: 'accession', 1: 'gross', 3: 'section', 4: 'signout'}
 
@@ -136,7 +137,7 @@ def model():
                 print(worker_eligible_each_slot[day, shift_period, stage])
                 model.Add(sum(value for value in worker_eligible_each_slot[day, shift_period, stage]) >= demand)
 
-    # constriant 3: a worker can only do one stage at each shift period
+    # constriant 2: a worker can only do one stage at each shift period
     # need to know each shift period, the worker can do which stages
     worker_is_working_shift_period = {}
     for key in worker_eligible_stages_each_shift_period:
@@ -153,7 +154,7 @@ def model():
         model.Add(sum(s for s in worker_eligible_stages_each_shift_period[key]) == worker_is_working_shift_period[
             worker, day, shift_period])
 
-    # constraint 2: a worker can only do consective slots each day? if he has to do more than one slot
+    # constraint 3: a worker can only do consective slots each day? if he has to do more than one slot
     # allowed_pattern = [[0, 0, 0], [0, 0, 1], [0, 1, 0], [0, 1, 1], [1, 0, 0], [1, 1, 0]]
     forbidden_patterns = [[1, 0, 1], [1, 1, 1]]
     for w in range(nbStaff):
@@ -169,6 +170,21 @@ def model():
                 # model.AddAllowedAssignments([worker_is_working_shift_period[w, day, roll_window_left],
                 #                             worker_is_working_shift_period[w, day, roll_window_left + 1],
                 #              worker_is_working_shift_period[w, day, roll_window_left + 2]], allowed_pattern)
+    # constraint 4: this is a new constraint I am trying. Assume there are overlapped shifts, the overlapped part makes a new shift, if the overlapped shift is taken, one of the two shifts must be taken as well, but not both
+    # therefore the forbidden partterns above still applies
+    # for this example, assume two shifts are 8:00 - 1600, 12:00 - 18:00, there are three shifts 8:00 - 12,  12 - 16, 16 - 18. The overlapped part is 12-16
+    # i can enforce worker at the same station from 8-12 and 12-16
+    useOverlap = False
+    if useOverlap:
+        for w in range(nbStaff):
+            for day in range(nbDays):
+                model.Add(worker_is_working_shift_period[w, day, 0] + worker_is_working_shift_period[w, day, 2] <= 1).OnlyEnforceIf(worker_is_working_shift_period[w, day, 1])
+                for stage in stages:
+                    if stage in rosterings_paras[w].skillset and day in rosterings_paras[w].avaliable:
+                        model.Add(rostering[w, day, 0, stage] == rostering[w, day, 1, stage]).OnlyEnforceIf(worker_is_working_shift_period[w, day, 0])
+                        model.Add(rostering[w, day, 2, stage] == rostering[w, day, 1, stage]).OnlyEnforceIf(
+                            worker_is_working_shift_period[w, day, 2])
+
     # objective minimise cost
     # how to assign 'evenly'?
     # I can find nb of shifts worked each day, ? I can find total nb of shifts worked over a week for each staff, make distrbution more even?
@@ -202,13 +218,16 @@ def model():
         columns = ['day', 'shift', 'stage'] + worker_strs
         result_df = pd.DataFrame(output,
                                  columns=columns)
+        result_df['Total'] = result_df.iloc[:, -nbStaff:-1].sum(axis=1)
+
+        print(result_df['Total'])
         to_csv(result_df, 'assignment.csv')
 
         # i want to know each worker is doing what station at each shift
         output = []
         for w in range(nbStaff):
             for day in range(nbDays):
-                data = [w, day]
+                data = [paras[idx_to_name_usr_str][w], day]
                 for shift_period in range(nb_shifts):
                     value = 0
                     onStage = None
