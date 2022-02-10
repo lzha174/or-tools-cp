@@ -1,5 +1,5 @@
 
-from commonstr import *
+from initial_paras import *
 
 class WorkerClass:
     def __init__(self, idx, day, period, start_time, end_time, lunch_start_time, lunch_end_time, stage):
@@ -176,7 +176,7 @@ class TaskClass:
         self.task_finished = True
         self.task_finish_time = time
 
-    def set_start_time(self, task_start_time):
+    def set_start_time(self, task_start_time = 0):
         self.start_task_time = task_start_time
         self.end_task_time = task_start_time + self.duration
         self.task_finished = True
@@ -189,7 +189,8 @@ class TaskClass:
 
         case_key_idx = self.task.case_key_idx 
         case_name = paras[idx_to_name_key_str][case_key_idx]
-        finished_data = [case_key_idx, case_name, task_name, self.task.order, start_time, end_time, self.duration, ready_time]
+        priority = paras[idx_to_name_priority_str][self.priority]
+        finished_data = [case_key_idx, case_name, priority, task_name, self.task.order, start_time, end_time, self.duration, ready_time]
         paras['result'].append(finished_data)
 
 
