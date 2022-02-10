@@ -86,27 +86,22 @@ for step in range(0, nb_shifts):
     staffing[step] = {0: 1, 1: 3, 2:3, 3: 1000, 4: 3, 5: 3}
 
 
-def staffing_to_csv(duplicate, use_this_day):
+def staffing_to_csv(duplicate = True):
     output = []
     if duplicate:
         # duplicate this day station demand to every day in this week
         for day in range(5):
             for shift in range(nb_shifts):
                 for stage in staffing[shift]:
-                    value = staffing[shift]
+                    value = staffing[shift][stage]
                     data = [day, shift, stage, value]
                     output.append(data)
-    else:
-        for day in range(nb_days):
-            for shift in range(nb_shifts):
-                for stage, value in staffing[shift].items():
-                    data = [day, shift, stage, value]
-                    output.append(data)
+
 
     result_df = pd.DataFrame(output,
                              columns=['day', 'period', 'stage', 'value'])
     # dont need embedding
-    result_df = result_df[result_df.stage != 2]
+    result_df = result_df[result_df.stage != paras[batch_stage_idx_str]]
     to_csv(result_df, 'staff.csv')
 
 
@@ -198,7 +193,7 @@ paras = {
     'lunch_used_embeddings': 0,
     'night_used_embeddings': 0,
     'unfinished': {},  # unfinished job from befor b4
-    max_job_str: 5,
+    max_job_str: 500,
     'start_emdbedding': {2:12 * seconds_per_hour, 9:20 * seconds_per_hour},
     # start time for category 0 and 1 at stage 2, 12pm, and 6 pm
     'duration_2': {2:2 * seconds_per_hour, 9:9 * seconds_per_hour},  # duration for category 0 and 1 at embedding in seconds

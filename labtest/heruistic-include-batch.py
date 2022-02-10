@@ -79,7 +79,6 @@ def row_process(row, day, period):
             duration = int(paras['95_quantile'][row.client])
     min_ready_time = int(paras['min_ready_time_series'][row.case_key])
 
-
     task = task_type(case_key_idx=case_key_idx, client_idx=client_idx, priority_idx=priority_idx, duration=duration,
                      ready_time=min_ready_time, order=row.case_stage_rank, first_task_ready_time=min_ready_time)
     job_data[case_key_idx].append(task)
@@ -116,7 +115,6 @@ def add_finished_stats(row, finished_case):
     case_stage_rank = row.case_stage_rank
     if case_max_stages[case_key_index] == case_stage_rank:
         finished_case.append(case_key_index)
-
 
 
 def record_result(start_date=18):
@@ -210,7 +208,7 @@ def record_result(start_date=18):
             (f_finished.min_ready_time > stats_start_ready_date) & (f_finished.min_ready_time < stat_end_ready_date)]
         print(stats_start_ready_date + ' jobs that are in the scheduling ', len(f_finished.index))
         # I am happy if a few of them is not finished in my rolling window for local serach
-        assert (len(finished_case) > 0.9 *len(f_finished))
+        assert (len(finished_case) > 0.9 * len(f_finished))
 
     return total_duration_df['optimised_duration'].mean()
 
@@ -240,9 +238,6 @@ def get_break_stats():
         if stage != paras[batch_stage_idx_str]:
             breaks = stage_workers[stage].get_break_stats()
             print(f'for stage {stage} breaks are {breaks}')
-
-
-
 
 
 def define_workers(day_index=0, period=2):
@@ -319,8 +314,6 @@ def assign_for_shift(day_index=0, period=2):
                 # assign this task to next avaliable worker and mark this task finished
                 # print('ready time,', tasks.task.get_ready_time())
                 # print(f'perform on this task for job {tasks.job_key}')
-                job_key = tasks.job_key
-
                 # print(tasks.task)
                 first_ready_time = tasks.task.get_first_task_ready_time()
                 worker = stage_workers[stage].next_avaliable_worker(tasks.task.get_ready_time(), tasks.task.duration)
@@ -427,7 +420,7 @@ def assign_model(current_staffing, day_index_local=1):
     paras['utilisation'] = []
     current_day = 17 + day_index_local
 
-    data_rolling_window_lower_bound = day_index_local -1
+    data_rolling_window_lower_bound = day_index_local - 1
     data_rolling_window_upper_bound = day_index_local + 3
 
     paras[workers_str] = {}  # key day, period, stage, value is a collection of workers for that shift
@@ -450,12 +443,12 @@ def assign_model(current_staffing, day_index_local=1):
             define_jobs()
             define_workers(day, idx)
             assign_for_shift(day, idx)
-            #get_break_stats()
+            # get_break_stats()
 
             # print('todao job is ', job_today)
         # print('night used', paras['night_used_embeddings'])
         # print('lunch used', paras['lunch_used_embeddings'])
-    #get_gantt()
+    # get_gantt()
     average_time = record_result(current_day)
     return average_time
 
@@ -463,7 +456,7 @@ def assign_model(current_staffing, day_index_local=1):
 # assign_model(staffing)
 
 # i want to define a simple local search for a day's shift? fix all other day's shift
-def shift_local_search(day = 0):
+def shift_local_search(day=0):
     paras['result'] = []
     paras['utilisation'] = []
     paras['staffing'] = None
@@ -523,15 +516,13 @@ def shift_local_search(day = 0):
 
         else:
             # no need to continue adding
-            staffing_to_csv(duplicate = True, use_this_day = day)
+            staffing_to_csv(duplicate=True, use_this_day=day)
             break
 
         for shift_period in range(max_shift_key + 1):
             for s in stage_to_search:
                 logstr.append(
                     f'day {day} period {shift_period} stage {s} staff are {staffing[shift_period][s]}\n')
-
-
 
     write_to_file('log.txt', logstr)
 
@@ -543,6 +534,7 @@ def repeat_local_search():
         counter = counter + 1
 
 
-#repeat_local_search()
+# repeat_local_search()
 assign_model(staffing, 1)
-#shift_local_search()
+# shift_local_search()
+staffing_to_csv(True)

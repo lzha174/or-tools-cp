@@ -61,14 +61,15 @@ def model():
     worker_profile = {}
     df = load_profile(worker_profile)
 
-    stage_names = {0: 'accession', 1: 'gross', 3: 'section', 4: 'signout'}
+    stage_names = {0: 'accession', 1: 'gross', 2:'process', 4:'section', 5: 'signout'}
 
     station_demand = load_station_demand()
 
     nbDays = 5
 
     # just read in the staffing for now
-    stages = [0, 1, 3, 4]
+    stages = stage_names.keys()
+
     shift_staffing = {}
     for key, value in station_demand.items():
         day = key[0]
