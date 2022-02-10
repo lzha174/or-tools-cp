@@ -1,5 +1,5 @@
 
-from commonstr import *
+from initial_paras import *
 
 class WorkerClass:
     def __init__(self, idx, day, period, start_time, end_time, lunch_start_time, lunch_end_time, stage):
