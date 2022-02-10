@@ -264,8 +264,8 @@ def define_workers(day_index=0, period=2):
             # print(stage_workers[stage])
         else:
             capacity_used = paras['lunch_used_embeddings']
-            starts_time = paras['start_emdbedding'][two_hour_idx] + day_index * day_in_seconds
-            ends_time = starts_time + 2 * seconds_per_hour
+            starts_time = paras['start_emdbedding'][2] + day_index * day_in_seconds
+            ends_time = starts_time + paras['duration_2'][2]
             paras[workers_str][day_index, period, stage] = WokrerCollection(day_index, period, stage,
                                                                             capacity[stage] - capacity_used,
                                                                             starts_time, ends_time, lunch_start_time,
@@ -274,8 +274,8 @@ def define_workers(day_index=0, period=2):
             stage_workers[stage] = paras[workers_str][day_index, period, stage]  # print(stage_workers[stage])
 
             capacity_used = paras['night_used_embeddings']
-            starts_time = paras['start_emdbedding'][nine_hour_idx] + day_index * day_in_seconds
-            ends_time = starts_time + 9 * seconds_per_hour
+            starts_time = paras['start_emdbedding'][9] + day_index * day_in_seconds
+            ends_time = starts_time + paras['duration_2'][9]
 
             paras[workers_str][day_index, period, nigh_stage] = WokrerCollection(day_index, period, nigh_stage,
                                                                                  capacity[stage] - capacity_used,
@@ -346,7 +346,7 @@ def assign_for_shift(day_index=0, period=2):
                         # allJobs.show_job(next_task.job_key)
                         # put this into night batch
                         # print(stage_workers[nigh_stage])
-                        duration = 9 * seconds_per_hour
+                        duration = paras['duration_2'][9]
                         worker = stage_workers[nigh_stage].next_avaliable_worker(next_task.task.get_ready_time(),
                                                                                  duration)
                         ready_time = format_time(next_task.task.get_ready_time())
@@ -357,7 +357,7 @@ def assign_for_shift(day_index=0, period=2):
                         # print('next avaliable worker')
                         # print(worker)
                     else:
-                        duration = 2 * seconds_per_hour
+                        duration = paras['duration_2'][2]
                         # 2 hour prioity, put it into lunch batch if possible
                         # get next avalaible worker from two hour batch
                         worker = stage_workers[stage].next_avaliable_worker(next_task.task.get_ready_time(),
@@ -365,7 +365,7 @@ def assign_for_shift(day_index=0, period=2):
 
                         if worker is None:
                             # passed lunch batch
-                            duration = 9 * seconds_per_hour
+                            duration = paras['duration_2'][9]
                             worker = stage_workers[nigh_stage].next_avaliable_worker(next_task.task.get_ready_time(),
                                                                                      duration)
 

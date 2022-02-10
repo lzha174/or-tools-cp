@@ -198,10 +198,10 @@ paras = {
     'lunch_used_embeddings': 0,
     'night_used_embeddings': 0,
     'unfinished': {},  # unfinished job from befor b4
-    max_job_str: 500,
-    'start_emdbedding': [12 * seconds_per_hour, 20 * seconds_per_hour],
+    max_job_str: 5,
+    'start_emdbedding': {2:12 * seconds_per_hour, 9:20 * seconds_per_hour},
     # start time for category 0 and 1 at stage 2, 12pm, and 6 pm
-    'duration_2': [2 * seconds_per_hour, 9 * seconds_per_hour],  # duration for category 0 and 1 at embedding in seconds
+    'duration_2': {2:2 * seconds_per_hour, 9:9 * seconds_per_hour},  # duration for category 0 and 1 at embedding in seconds
 
     'max_serach_time_sec': 70,
 
