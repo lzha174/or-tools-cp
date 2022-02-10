@@ -5,7 +5,6 @@ from datetime import timedelta
 import numpy as np
 import pandas as pd
 
-preprocess_str = 'Preprocess'
 
 name_to_idx_key_str = 'name_to_idx_key'
 idx_to_name_key_str = 'idx_to_name_key'
@@ -84,7 +83,7 @@ for step in range(0, nb_shifts):
     shift = shift_pattern_type(start=start, start_str=start_str, end=end, end_str=end_str)
     shift_patterns[step] = shift
     # for now , make staffing same # 5 is preprocess stage before embedding
-    staffing[step] = {0: 1, 1: 3, 2: 1000, 3: 3, 4: 3, 5: 3}
+    staffing[step] = {0: 1, 1: 3, 2:3, 3: 1000, 4: 3, 5: 3}
 
 
 def staffing_to_csv(duplicate, use_this_day):
@@ -112,7 +111,7 @@ def staffing_to_csv(duplicate, use_this_day):
 
 
 # how many samples each woker can do each hour
-capacity_before_break = {0: 8, 1: 8, 2: 1000, 3: 8, 4: 8, 5: 8}
+capacity_before_break = {0: 8, 1: 8, 2: 8, 3: 1000, 4: 8, 5: 8}
 
 min_shift_key = 0
 max_shift_key = nb_shifts - 1
@@ -231,9 +230,6 @@ def load_real_data():
     df['end_timestamp'] = pd.to_datetime(df['end_timestamp'], format='%Y-%m-%d %H:%M:%S')
     df['work_ready_timestamp'] = pd.to_datetime(df['work_ready_timestamp'], format='%Y-%m-%d %H:%M:%S')
     # https://www.kite.com/python/answers/how-to-find-the-number-of-seconds-between-two-datetime-objects-in-python
-    print(df.work_ready_timestamp.head(3))
-
-    print(df.head(3))
     past_date = pd.to_datetime('17/05/2021 00:00')
     df['case_priority'].fillna(1, inplace=True)
     df['duration'] = df['end_timestamp'] - df["start_timestamp"]
@@ -337,7 +333,6 @@ def load_real_data():
     print(df.describe())
     print('case priority summary \n', df['case_priority'].describe())
     clients = df['client'].unique()
-    clients = np.append(clients, [preprocess_str])
     case_priority = df['case_priority'].unique()
     case_key = df['case_key'].unique()
 
@@ -380,3 +375,4 @@ def load_real_data():
     print(f)
 
     return df
+

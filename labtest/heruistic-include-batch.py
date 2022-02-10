@@ -79,14 +79,6 @@ def row_process(row, day, period):
             duration = int(paras['95_quantile'][row.client])
     min_ready_time = int(paras['min_ready_time_series'][row.case_key])
 
-    # for every embededing task, create preprocessing task copy its duration, the embedding will be the batch as usual
-    preprocess_task = None
-    if row.client == 'Embedding':
-        preprocess_task = task_type(case_key_idx=case_key_idx, client_idx= 5, priority_idx=priority_idx, duration=duration,
-                     ready_time=min_ready_time, order=case_stage_rank - 1, first_task_ready_time=min_ready_time)
-        job_data[case_key_idx].append(preprocess_task)
-        # how to I increase follwing stage rank
-
 
     task = task_type(case_key_idx=case_key_idx, client_idx=client_idx, priority_idx=priority_idx, duration=duration,
                      ready_time=min_ready_time, order=row.case_stage_rank, first_task_ready_time=min_ready_time)
@@ -552,5 +544,5 @@ def repeat_local_search():
 
 
 #repeat_local_search()
-#assign_model(staffing, 1)
-shift_local_search()
+assign_model(staffing, 1)
+#shift_local_search()
