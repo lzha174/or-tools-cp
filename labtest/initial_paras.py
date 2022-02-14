@@ -4,7 +4,7 @@ from datetime import timedelta
 
 import numpy as np
 import pandas as pd
-
+import copy
 
 name_to_idx_key_str = 'name_to_idx_key'
 idx_to_name_key_str = 'idx_to_name_key'
@@ -21,6 +21,9 @@ two_hour_priority_idx_str = 'two_hour_priority_idx'
 
 name_to_idx_user_str = 'name_to_idx_user'
 idx_to_name_usr_str = 'idx_to_name_user'
+
+stage_to_idx_str = 'name_to_idx_stage'
+idx_to_stage_str = 'idx_to_name_stage'
 
 max_job_str = 'max_job'
 job_data_dict_str = 'job_data'
@@ -72,6 +75,8 @@ staffing = {}
 staff_interval = 4
 nb_days = 7
 nb_shifts = 3
+nb_fake_users = 20
+fake_user_suffix = 'fake_user_'
 
 for step in range(0, nb_shifts):
     start = 8 + staff_interval * step
@@ -90,18 +95,24 @@ def staffing_to_csv(duplicate = True):
     output = []
     if duplicate:
         # duplicate this day station demand to every day in this week
-        for day in range(5):
+        for day in range(20):
             for shift in range(nb_shifts):
                 for stage in staffing[shift]:
+                    # dont need embedding
+                    if stage == paras[batch_stage_idx_str]: continue
+                    stage_output = copy.deepcopy(stage)
+                    # offset followed stage by -1
+                    if stage > paras[batch_stage_idx_str]:
+                        stage_output = stage_output - 1
+
                     value = staffing[shift][stage]
-                    data = [day, shift, stage, value]
+                    data = [day, shift, stage_output, value]
                     output.append(data)
 
 
     result_df = pd.DataFrame(output,
                              columns=['day', 'period', 'stage', 'value'])
-    # dont need embedding
-    result_df = result_df[result_df.stage != paras[batch_stage_idx_str]]
+
     to_csv(result_df, 'staff.csv')
 
 

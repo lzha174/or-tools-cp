@@ -535,6 +535,6 @@ def repeat_local_search():
 
 
 # repeat_local_search()
-assign_model(staffing, 1)
+#assign_model(staffing, 1)
 # shift_local_search()
 staffing_to_csv(True)
