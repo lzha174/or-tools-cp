@@ -75,7 +75,7 @@ staffing = {}
 staff_interval = 4
 nb_days = 7
 nb_shifts = 3
-nb_fake_users = 20
+nb_fake_users = 5
 fake_user_suffix = 'fake_user_'
 
 for step in range(0, nb_shifts):
@@ -88,7 +88,7 @@ for step in range(0, nb_shifts):
     shift = shift_pattern_type(start=start, start_str=start_str, end=end, end_str=end_str)
     shift_patterns[step] = shift
     # for now , make staffing same # 5 is preprocess stage before embedding
-    staffing[step] = {0: 1, 1: 3, 2:3, 3: 1000, 4: 3, 5: 3}
+    staffing[step] = {0: 1, 1: 2, 2:2, 3: 1000, 4: 2, 5: 2}
 
 
 def staffing_to_csv(duplicate = True):
@@ -232,6 +232,7 @@ def to_csv(df, filename):
 
 def load_real_data():
     df = pd.read_csv("5-day-embedding.csv")
+    #df = load_from_sql()
     df['start_timestamp'] = pd.to_datetime(df['start_timestamp'], format='%Y-%m-%d %H:%M:%S')
     df['end_timestamp'] = pd.to_datetime(df['end_timestamp'], format='%Y-%m-%d %H:%M:%S')
     df['work_ready_timestamp'] = pd.to_datetime(df['work_ready_timestamp'], format='%Y-%m-%d %H:%M:%S')
@@ -382,3 +383,22 @@ def load_real_data():
 
     return df
 
+useNoteBook = False
+
+def python_min(a,b):
+    return None
+
+def python_max(a,b):
+    return None
+
+def custom_min(a, b):
+    if useNoteBook:
+        return python_min(a, b)
+    else:
+        return min(a,b)
+
+def custom_max(a,b):
+    if useNoteBook:
+        return python_max(a, b)
+    else:
+        return max(a,b)

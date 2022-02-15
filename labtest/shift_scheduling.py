@@ -43,6 +43,7 @@ def worker_row_process(row, worker_available):
 # Load worker availablity
 def load_worker_avaliable():
     df = pd.read_csv('worker_available.csv')
+    #df = load_from_storage('worker_aval')
     worker_available = {}
     df.apply(worker_row_process, args=(worker_available,), axis = 1)
 
@@ -56,6 +57,7 @@ def load_worker_avaliable():
 # load station demand for each day, shift
 def load_station_demand():
     df = pd.read_csv("staff.csv")
+    #df = load_from_storage("station_demand")
     station_demand = {}
     df.apply(station_row_process, args=(station_demand,), axis = 1)
     print(df[df.stage == 4])
@@ -66,6 +68,7 @@ def load_station_demand():
 # Load skillset for each worker
 def load_profile(worker_profile = {}):
     df = pd.read_csv("worker_profile.csv")
+    #df = load_from_storage('worker_profile')
     columns = df.columns.tolist()
     columns.remove('user')
     print(columns)
@@ -101,6 +104,7 @@ def load_profile(worker_profile = {}):
     # append fake users to worker profile
     for i in range(nb_fake_users):
         fake_user_idx = paras[name_to_idx_user_str][fake_user_suffix+f'{i}']
+        paras['fake_users'].append(fake_user_idx)
         worker_profile[fake_user_idx] = worker_profile_type(idx=fake_user_idx, skillset=[0,1,2,3,4])
 
     return df
@@ -109,6 +113,7 @@ def load_profile(worker_profile = {}):
 def model():
     # first define shifts, each shift has 4 work stations, each station has a demand
     # need a way to mark the shift is for which day during a week
+    paras['fake_users'] = []
     worker_profile = {}
     load_profile(worker_profile)
 
@@ -135,11 +140,12 @@ def model():
         shift_staffing[day, shift_period, stage] = demand
     # define workers
     # each worker has a certain skillset?, each worker is avaliable on certain days? each worker can do no more than 2 shifts a day, they must be contineious?
-    roster_type = collections.namedtuple('roster', 'skillset avaliable cost')
+    roster_type = collections.namedtuple('roster', 'skillset avaliable cost real_user')
     nbStaff = len(worker_profile)
     rosterings_paras = {}
     for s in range(nbStaff):
         staff_name = paras[idx_to_name_usr_str][s]
+        isRealUser = s not in paras['fake_users']
         profile = worker_profile[s]
         avaliable = paras['woker_available'][staff_name]
 
@@ -156,9 +162,9 @@ def model():
                     c = 10
                 cost[day, shift] = c
         # cost is define by day and shift
-                if fake_user_suffix in staff_name:
+                if isRealUser == False:
                     cost[day, shift] = 1000
-        rosterings_paras[s] = roster_type(skillset=profile.skillset, avaliable=avaliable, cost=cost)
+        rosterings_paras[s] = roster_type(skillset=profile.skillset, avaliable=avaliable, cost=cost, real_user = isRealUser)
 
     print(shift_staffing)
     print(rosterings_paras)
@@ -169,6 +175,7 @@ def model():
     rostering = {}
     worker_eligible_each_slot = {}
     worker_eligible_stages_each_shift_period = {}
+    worker_all_elegible_slots = {}
     for w in range(nbStaff):
         for day in range(nbDays):
             for shift_period in range(nb_shifts):
@@ -190,6 +197,13 @@ def model():
                             worker_eligible_stages_each_shift_period[w, day, shift_period] = []
                         worker_eligible_stages_each_shift_period[w, day, shift_period].append(
                             rostering[w, day, shift_period, stage])
+
+                        if rosterings_paras[w].real_user:
+                            key = worker_all_elegible_slots.get((w, day), None)
+                            if key is None:
+                                worker_all_elegible_slots[w, day] = []
+                            worker_all_elegible_slots[w, day].append(rostering[w, day, shift_period, stage])
+
 
     # constraint 1, for each slot (day, shift_period, stage), deamnd needs to be satisifed
     for day in range(nbDays):
@@ -221,6 +235,7 @@ def model():
     # allowed_pattern = [[0, 0, 0], [0, 0, 1], [0, 1, 0], [0, 1, 1], [1, 0, 0], [1, 1, 0]]
     forbidden_patterns = [[1, 0, 1], [1, 1, 1]]
     for w in range(nbStaff):
+        if rosterings_paras[w].real_user == False: continue
         for day in range(nbDays):
             if day in rosterings_paras[w].avaliable:
                 # do a rolling window of 3? no zero in the middle
@@ -248,14 +263,46 @@ def model():
                         model.Add(rostering[w, day, 2, stage] == rostering[w, day, 1, stage]).OnlyEnforceIf(
                             worker_is_working_shift_period[w, day, 2])
 
+    #constraint 5: find min number of total assigned shifts and max no. of total assigned shfits
+    use_even_shifts = False
+    if use_even_shifts:
+        totalShifts = []
+        for key, values in worker_all_elegible_slots.items():
+            suffix = f'total_shift_{key}'
+            totalShiftVar = model.NewIntVar(0, nb_shifts * nbDays, suffix)
+            model.Add(totalShiftVar == sum(v for v in values ))
+            totalShifts.append(totalShiftVar)
+
+        minTotalShifts = model.NewIntVar(0, nb_shifts * nbDays,  'min_total')
+        maxTotalShifts = model.NewIntVar(0, nb_shifts * nbDays, 'max_total')
+
+        model.AddMinEquality(minTotalShifts, totalShifts)
+        model.AddMaxEquality(maxTotalShifts, totalShifts)
+
+    # constraint 6: every worker must work on the day he is avaliable
+    meet_minimum_hours = True
+    if meet_minimum_hours:
+        for key, values in worker_all_elegible_slots.items():
+            day = key[1]
+            w = key[0]
+            suffix = f'total_shift_{key}'
+            totalShiftVar = model.NewIntVar(0, nb_shifts * nbDays, suffix)
+            model.Add(totalShiftVar == sum(v for v in values ))
+            model.Add(totalShiftVar >= 1)
+
     # objective minimise cost
     # how to assign 'evenly'?
     # I can find nb of shifts worked each day, ? I can find total nb of shifts worked over a week for each staff, make distrbution more even?
     # i can add a soft prefrence cost constriant? if an employee likes a particular shift period, make the cost smaller
-
-    model.Minimize(
-        sum(v * rosterings_paras[key[0]].cost[key[1], key[2]] for key, v in worker_is_working_shift_period.items()))
-
+    objective = 'min_cost'
+    #objective = 'even_shift'
+    if objective == 'min_cost':
+        model.Minimize(
+            sum(v * rosterings_paras[key[0]].cost[key[1], key[2]] for key, v in worker_is_working_shift_period.items()))
+    # objective 2: minimise difference between max and min total number of assigned shifts to workers
+    # get total of assigned shifts for each worker
+    if objective == 'even_shift':
+        model.Minimize(maxTotalShifts - minTotalShifts )
     solver = cp_model.CpSolver()
     solver.parameters.max_time_in_seconds = paras['max_serach_time_sec']
     status = solver.Solve(model)
@@ -332,6 +379,9 @@ def model():
         to_csv(result_df, 'worker_shift.csv')
         temp = result_df[result_df.day == 0]
         print(temp)
+        if objective == 'even_shift':
+            print('max total shifts', solver.Value(maxTotalShifts))
+            print('min total shifts', solver.Value(minTotalShifts))
 
 
 

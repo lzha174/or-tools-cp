@@ -29,7 +29,8 @@ class WorkerClass:
         # total busy time is used to calculate utilisation
 
         self.total_busy_time = self.total_busy_time + duration
-        task_start_time = max(task_ready_time, self.next_avalaible_time)
+        # notebook change to python_max
+        task_start_time = custom_max(task_ready_time, self.next_avalaible_time)
         # if next avlaible time is 12:50, how to make it pass lunch time??
 
         # how to make avalible time jump out of ounch time
@@ -70,12 +71,15 @@ class WorkerClass:
 
     def isLunchTime(self,task_start_time, task_finish_time):
         if self.stage == paras[batch_stage_idx_str]: return
+        duration = task_finish_time - task_start_time
         task_inveral = pd.Interval(task_start_time, task_finish_time)
         lunch_interval = pd.Interval(self.lunch_start_time, self.lunch_end_time)
         isLunch = lunch_interval.overlaps(task_inveral)
         if isLunch:
             # make the avaliable time pass lunch
             self.next_avalaible_time = self.lunch_end_time
+            task_start_time = self.lunch_end_time
+            task_finish_time = self.lunch_end_time + duration
 
 
 
@@ -126,17 +130,19 @@ class WokrerCollection:
             # if task ready time is during lunch time, avalible time is 12pm, task start time is task ready time
             # it overlap with lunch time, so make the avalible time for that worker to be after lunch time for this task
             # if task ready time is before lunch, avalible time is during lunch time, task start time is during lunch time, again overlap, make avalible time after lunch
-
-            task_start_time = max(ready_time, worker.next_avalaible_time)
+            # notebook change to python_max
+            task_start_time = custom_max(ready_time, worker.next_avalaible_time)
             task_finished_time = task_start_time + duration
+            # if this work overlap with lunch time, change the avaliable time for the worker to b after lunch time
             worker.isLunchTime(task_start_time, task_finished_time)
-            task_start_time = max(ready_time, worker.next_avalaible_time)
-            task_finished_time = task_start_time + duration
+            # reset start time
+            #task_start_time = custom_max(ready_time, worker.next_avalaible_time)
+            #task_finished_time = task_start_time + duration
 
             if task_finished_time > worker.end_time: continue
             # if this job overlap lunch time, pretend this worker is avalible after lunch
 
-            worker.isLunchTime(task_start_time, task_finished_time)
+            #worker.isLunchTime(task_start_time, task_finished_time)
 
             if next_avalible_time is None:
                 next_avalible_time = worker.next_avalaible_time

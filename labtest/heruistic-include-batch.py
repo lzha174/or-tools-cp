@@ -65,14 +65,16 @@ def row_process(row, day, period):
         bench_finish_time[case_key_idx] = row.end_timestamp
         min_ready_times[case_key_idx] = row.ready_time_sec
     else:
-        bench_ready_time[case_key_idx] = min(row.work_ready_timestamp, bench_ready_time[case_key_idx])
-        bench_finish_time[case_key_idx] = max(row.end_timestamp, bench_finish_time[case_key_idx])
-        min_ready_times[case_key_idx] = min(row.ready_time_sec, min_ready_times[case_key_idx])
+        # notebook chagne to python_min
+        bench_ready_time[case_key_idx] = custom_min(row.work_ready_timestamp, bench_ready_time[case_key_idx])
+        bench_finish_time[case_key_idx] = custom_max(row.end_timestamp, bench_finish_time[case_key_idx])
+        min_ready_times[case_key_idx] = custom_min(row.ready_time_sec, min_ready_times[case_key_idx])
+
 
     if case_key_idx not in case_max_stages:
         case_max_stages[case_key_idx] = case_stage_rank
     else:
-        case_max_stages[case_key_idx] = max(case_max_stages[case_key_idx], case_stage_rank)
+        case_max_stages[case_key_idx] = custom_max(case_max_stages[case_key_idx], case_stage_rank)
     # reaplce duration if it is above 95% quantile with 95% quantile value
     if row.client in paras['95_quantile']:
         if row.duration_sec > paras['95_quantile'][row.client]:
@@ -208,9 +210,16 @@ def record_result(start_date=18):
             (f_finished.min_ready_time > stats_start_ready_date) & (f_finished.min_ready_time < stat_end_ready_date)]
         print(stats_start_ready_date + ' jobs that are in the scheduling ', len(f_finished.index))
         # I am happy if a few of them is not finished in my rolling window for local serach
-        assert (len(finished_case) > 0.9 * len(f_finished))
+        #assert (len(finished_case) > 0.9 * len(f_finished))
+        finished_percentage = len(finished_case) / (1.0* len(f_finished))
+        print('finish percentage is ', finished_percentage)
+    # check if 90% is finished within two days
+    reach_target = False
+    if finished_percentage >= 0.95 and total_duration_df['optimised_duration'].mean() - timedelta(days = 2) <timedelta(seconds = 1):
+        reach_target = True
 
-    return total_duration_df['optimised_duration'].mean()
+    print(total_duration_df['optimised_duration'].mean() - timedelta(days = 2) < timedelta(hours = 10))
+    return total_duration_df['optimised_duration'].mean(), reach_target
 
 
 # write_to_file(logstr)
@@ -322,7 +331,7 @@ def assign_for_shift(day_index=0, period=2):
                 if worker is not None:
                     find_a_worker = True
                     # assign this task to thie worker
-                    task_start_time = max(worker.get_avaliable_time(), tasks.task.get_ready_time())
+                    task_start_time = custom_max(worker.get_avaliable_time(), tasks.task.get_ready_time())
                     worker.update_avaliable_time(tasks.task.get_ready_time(), tasks.task.duration)
                     # print('after assign')
                     # print(worker)
@@ -370,7 +379,7 @@ def assign_for_shift(day_index=0, period=2):
                     if worker is not None:
                         find_a_worker = True
                         # print(next_task.task)
-                        task_start_time = max(worker.get_avaliable_time(), next_task.task.get_ready_time())
+                        task_start_time = custom_max(worker.get_avaliable_time(), next_task.task.get_ready_time())
                         # need to update embedding duration based on lunch or night
                         next_task.task.duration = duration
                         worker.update_avaliable_time(next_task.task.get_ready_time(), duration)
@@ -449,14 +458,14 @@ def assign_model(current_staffing, day_index_local=1):
         # print('night used', paras['night_used_embeddings'])
         # print('lunch used', paras['lunch_used_embeddings'])
     # get_gantt()
-    average_time = record_result(current_day)
-    return average_time
+    average_time, reach_target = record_result(current_day)
+    return average_time, reach_target
 
 
 # assign_model(staffing)
 
 # i want to define a simple local search for a day's shift? fix all other day's shift
-def shift_local_search(day=0):
+def shift_local_search(day=1):
     paras['result'] = []
     paras['utilisation'] = []
     paras['staffing'] = None
@@ -464,27 +473,29 @@ def shift_local_search(day=0):
 
     logstr = []
 
-    current_average = assign_model(staffing, day)
+    current_average, reach_target = assign_model(staffing, day)
     print(f'current average {current_average}')
     logstr.append(f'current average before adding staff for day {day} is {current_average}')
     for i in range(nb_staff_to_add):
         outstr = f'add staff {i}\n'
         logstr.append(outstr)
         # say i want to add one more staff, i want to know add to which stage
-        stage_to_search = [0, 1, 3, 4]
+        stage_to_search = [0, 1, 2, 4, 5]
         # improvement = {}
 
         # add 1 worker to the best shift, in each shift , find the best stage
-        max_improvment_shift = -1e15
+        max_improvment_shift = 0
         best_shift = None
         best_average_shift = None
         best_shift_stage = None
+        reach_target = False
         for shift_period in range(max_shift_key + 1):
             logstr.append(f'go through shift {shift_period}\n')
 
-            max_improvment_this_shift = -1e15
+            max_improve_all_stages_this_shift = -1e15
             best_average_this_shift = None
             best_stage_this_shift = None
+
             # given a shift period, find the best stage to add a worker
 
             for s in stage_to_search:
@@ -492,20 +503,29 @@ def shift_local_search(day=0):
 
                 temp_staffing[shift_period][s] = temp_staffing[shift_period][s] + 1
                 # print('current staffing', temp_staffing)
-                new_average = assign_model(temp_staffing, day)
+                new_average, reach_target = assign_model(temp_staffing, day)
+                # when 95% are finished within 2 days, we are done
                 improvement = current_average - new_average
                 to_seconds = improvement.total_seconds()
                 print('to seconds', to_seconds)
-                if to_seconds > 0 and to_seconds > max_improvment_this_shift:
-                    max_improvment_this_shift = to_seconds
+                if to_seconds > 0 and to_seconds > max_improve_all_stages_this_shift:
+                    max_improve_all_stages_this_shift = to_seconds
                     best_stage_this_shift = s
                     best_average_this_shift = new_average
-
-            if max_improvment_this_shift > max_improvment_shift:
-                max_improvment_shift = max_improvment_this_shift
+                    # if we have reached performance targert, no need to continue to add?
+                    if reach_target:
+                        break
+            # after going through all stages of a shift period, if the best improvement is better than current best,
+            # mark this shift to be the best shfit to add 1 more staff
+            if max_improve_all_stages_this_shift > max_improvment_shift:
+                max_improvment_shift = max_improve_all_stages_this_shift
                 best_shift = shift_period
                 best_average_shift = best_average_this_shift
                 best_shift_stage = best_stage_this_shift
+                if reach_target:
+                    staffing[best_shift][best_shift_stage] = staffing[best_shift][best_shift_stage] + 1
+                    return
+
 
         if best_shift is not None:
             logstr.append(f'best shift is {best_shift} best stage is {best_shift_stage}\n')
@@ -513,28 +533,18 @@ def shift_local_search(day=0):
             staffing[best_shift][best_shift_stage] = staffing[best_shift][best_shift_stage] + 1
             current_average = best_average_shift
             print(current_average)
-
         else:
-            # no need to continue adding
-            staffing_to_csv(duplicate=True, use_this_day=day)
-            break
+            return
 
         for shift_period in range(max_shift_key + 1):
             for s in stage_to_search:
                 logstr.append(
-                    f'day {day} period {shift_period} stage {s} staff are {staffing[shift_period][s]}\n')
+                    f'period {shift_period} stage {s} staff are {staffing[shift_period][s]}\n')
 
     write_to_file('log.txt', logstr)
 
 
-def repeat_local_search():
-    counter = 0
-    while counter < 2:
-        shift_local_search()
-        counter = counter + 1
-
-
 # repeat_local_search()
 #assign_model(staffing, 1)
-# shift_local_search()
+shift_local_search(1)
 staffing_to_csv(True)
