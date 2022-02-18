@@ -3,6 +3,9 @@ from ortools.sat.python import cp_model
 
 from initial_paras import *
 from intervals import IntInterval
+
+
+
 # This model require three input files.
 # file 1: staff.csv defining station demand for each day,shift, station. This data is obtained from heuristic model output after a local
 # file 2: worker skillset defining worker eligibility for each station. This data is extractd from database by checking who is doing what between certain dates
@@ -31,6 +34,7 @@ def station_row_process(row, station_demand):
     stage = row.stage
     value = row.value
     #print('day = ', day, 'shift=', shift)
+    when r.
     station_demand[day, shift, stage] = value
 
 def worker_row_process(row, worker_available):
@@ -49,7 +53,7 @@ def load_worker_avaliable():
 
     for i in range(nb_fake_users):
         fake_user_name =fake_user_suffix+f'{i}'
-        worker_available[fake_user_name] = [i for i in range(20)]
+        worker_available[fake_user_name] = [i for i in range(nb_days_rostering)]
 
     print(worker_available)
     paras['woker_available'] = worker_available
@@ -124,8 +128,8 @@ def model():
     load_worker_avaliable()
 
     # note: when on notebook, this can go wrong. need to check it later
-    nbDays = 5
-    day_intervals = IntInterval.closed_open(0, nbDays)
+
+    day_intervals = IntInterval.closed_open(0, nb_days_rostering)
     # just read in the staffing for now
     stages = paras[idx_to_stage_str].keys()
 
@@ -153,7 +157,7 @@ def model():
             print('ArionM', avaliable)
 
         cost = {}
-        for day in range(nbDays):
+        for day in range(nb_days_rostering):
             for shift in range(nb_shifts):
                 # make shift 0 attractive for worker 1
                 if s == 1 and shift == 0:
@@ -177,7 +181,7 @@ def model():
     worker_eligible_stages_each_shift_period = {}
     worker_all_elegible_slots = {}
     for w in range(nbStaff):
-        for day in range(nbDays):
+        for day in range(nb_days_rostering):
             for shift_period in range(nb_shifts):
                 for stage in stages:
                     # add a bool var if this worker is avaliable and able to do this stage
@@ -206,7 +210,7 @@ def model():
 
 
     # constraint 1, for each slot (day, shift_period, stage), deamnd needs to be satisifed
-    for day in range(nbDays):
+    for day in range(nb_days_rostering):
         for shift_period in range(nb_shifts):
             for stage in stages:
                 demand = shift_staffing[day, shift_period, stage]
@@ -236,7 +240,7 @@ def model():
     forbidden_patterns = [[1, 0, 1], [1, 1, 1]]
     for w in range(nbStaff):
         if rosterings_paras[w].real_user == False: continue
-        for day in range(nbDays):
+        for day in range(nb_days_rostering):
             if day in rosterings_paras[w].avaliable:
                 # do a rolling window of 3? no zero in the middle
                 roll_window_left = 0
@@ -255,7 +259,7 @@ def model():
     useOverlap = False
     if useOverlap:
         for w in range(nbStaff):
-            for day in range(nbDays):
+            for day in range(nb_days_rostering):
                 model.Add(worker_is_working_shift_period[w, day, 0] + worker_is_working_shift_period[w, day, 2] <= 1).OnlyEnforceIf(worker_is_working_shift_period[w, day, 1])
                 for stage in stages:
                     if stage in rosterings_paras[w].skillset and day in rosterings_paras[w].avaliable:
@@ -269,12 +273,12 @@ def model():
         totalShifts = []
         for key, values in worker_all_elegible_slots.items():
             suffix = f'total_shift_{key}'
-            totalShiftVar = model.NewIntVar(0, nb_shifts * nbDays, suffix)
+            totalShiftVar = model.NewIntVar(0, nb_shifts * nb_days_rostering, suffix)
             model.Add(totalShiftVar == sum(v for v in values ))
             totalShifts.append(totalShiftVar)
 
-        minTotalShifts = model.NewIntVar(0, nb_shifts * nbDays,  'min_total')
-        maxTotalShifts = model.NewIntVar(0, nb_shifts * nbDays, 'max_total')
+        minTotalShifts = model.NewIntVar(0, nb_shifts * nb_days_rostering,  'min_total')
+        maxTotalShifts = model.NewIntVar(0, nb_shifts * nb_days_rostering, 'max_total')
 
         model.AddMinEquality(minTotalShifts, totalShifts)
         model.AddMaxEquality(maxTotalShifts, totalShifts)
@@ -286,7 +290,7 @@ def model():
             day = key[1]
             w = key[0]
             suffix = f'total_shift_{key}'
-            totalShiftVar = model.NewIntVar(0, nb_shifts * nbDays, suffix)
+            totalShiftVar = model.NewIntVar(0, nb_shifts * nb_days_rostering, suffix)
             model.Add(totalShiftVar == sum(v for v in values ))
             model.Add(totalShiftVar >= 1)
 
@@ -312,7 +316,7 @@ def model():
         print(status)
         output = []
         # i want to know each slot is done by which workers
-        for day in range(nbDays):
+        for day in range(nb_days_rostering):
             for shift_period in range(nb_shifts):
                 for stage in stages:
                     data = [day, shift_period, paras[idx_to_stage_str][stage]]
@@ -336,7 +340,7 @@ def model():
         # i want to know each worker is doing what station at each shift
         output = []
         for w in range(nbStaff):
-            for day in range(nbDays):
+            for day in range(nb_days_rostering):
                 data = [paras[idx_to_name_usr_str][w], day]
                 for shift_period in range(nb_shifts):
                     value = 0

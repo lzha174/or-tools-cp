@@ -1,6 +1,7 @@
 import collections
-from datetime import datetime
+#from datetime import datetime
 from datetime import timedelta
+import datetime
 
 import numpy as np
 import pandas as pd
@@ -75,7 +76,8 @@ staffing = {}
 staff_interval = 4
 nb_days = 7
 nb_shifts = 3
-nb_fake_users = 5
+nb_fake_users = 10
+nb_days_rostering = 28
 fake_user_suffix = 'fake_user_'
 
 for step in range(0, nb_shifts):
@@ -95,7 +97,7 @@ def staffing_to_csv(duplicate = True):
     output = []
     if duplicate:
         # duplicate this day station demand to every day in this week
-        for day in range(20):
+        for day in range(28):
             for shift in range(nb_shifts):
                 for stage in staffing[shift]:
                     # dont need embedding
@@ -114,6 +116,7 @@ def staffing_to_csv(duplicate = True):
                              columns=['day', 'period', 'stage', 'value'])
 
     to_csv(result_df, 'staff.csv')
+    return result_df
 
 
 # how many samples each woker can do each hour
@@ -170,7 +173,7 @@ def format_time(n=15):
     time_str = '05/17/2021 00:00:00'
     date_format_str = '%m/%d/%Y %H:%M:%S'
     # create datetime object from timestamp string
-    given_time = datetime.strptime(time_str, date_format_str)
+    given_time = datetime.datetime.strptime(time_str, date_format_str)
     # print('Given timestamp: ', given_time)
     # Add 15 minutes to datetime object
     final_time = given_time + timedelta(seconds=n)
