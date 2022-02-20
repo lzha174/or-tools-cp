@@ -40,9 +40,9 @@ def row_process(row, day, period):
 
     if paras['full'] == True:
         return
-    x = paras['day_jobs'].get((day, period), None)
-    if x is None: return
-    if row.case_key not in paras['day_jobs'][day, period]: return
+    #x = paras['day_jobs'].get((day, period), None)
+    #if x is None: return
+    #if row.case_key not in paras['day_jobs'][day, period]: return
 
     # print('name = ', name)
     if len(job_data) == paras[max_job_str]:
@@ -89,8 +89,9 @@ def row_process(row, day, period):
     paras['last_inserted_case'] = case_key_idx
 
 
-def load_new_day(df, day, period):
-    df.apply(row_process, args=(day, period,), axis=1)
+def load_new_day(day, period):
+    paras['jobs_in_shift'][day, period].apply(row_process, args=(day, period,), axis=1)
+    #df.apply(row_process, args=(day, period,), axis=1)
     # print(f'new jobs {len(job_data)}')
     # add floatted job
     if len(paras['unfinished']) > 0:
@@ -445,7 +446,7 @@ def assign_model(current_staffing, day_index_local=1):
         for idx, data_window in enumerate(data_windows):
             job_data = {}
             paras['full'] = False
-            load_new_day(df, day, idx)
+            load_new_day(day, idx)
             job_today = job_today + len(job_data)
             # print('total jobs {} for day {} period {} is {}'.format(data_window, day, idx, len(job_data)))
             # if (len(job_data) == 0): continue
@@ -543,8 +544,10 @@ def shift_local_search(day=1):
 
     write_to_file('log.txt', logstr)
 
-
+a = datetime.datetime.now()
 # repeat_local_search()
-#assign_model(staffing, 1)
-shift_local_search(1)
-staffing_to_csv(True)
+assign_model(staffing, 1)
+#shift_local_search(1)
+#staffing_to_csv(True)
+b = datetime.datetime.now()
+print('time elapsed is,', b - a)

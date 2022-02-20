@@ -217,7 +217,6 @@ paras = {
     job_weights_str: {},
     'result': [],
     'full': False,
-    'day_jobs': {}
 }
 
 two_hour_idx = 0
@@ -314,29 +313,21 @@ def load_real_data():
     # get first day, second day, thrid day starting jobs
     # save jobs belong to each shift window
     # is it ok to load tasks cant finish during this window? yes, coz end time constraint will make sure each task fall into the window
+    paras['jobs_in_shift'] = {}
+    tmp = df[df.case_stage_rank == 1]
+    case_arrival_times = dict(tmp.groupby(by='case_key').work_ready_timestamp.min())
     for key, data_windows in day_data_windows.items():
         # index of data_window is same as shift_patterns
         for idx, data_window in enumerate(data_windows):
-            tmp = df[df.case_stage_rank == 1]
-            tmp = tmp[
-                (tmp.work_ready_timestamp >= data_window[0]) & (tmp.work_ready_timestamp < data_window[1])].case_key
-            period_jobs = list(tmp.unique())
-            paras['day_jobs'][key, idx] = period_jobs
 
-    tmp = df[df.case_stage_rank == 1]
+            df['arrival_time'] = df['case_key']
+            df['arrival_time'] = df["arrival_time"].map(case_arrival_times)
+            paras['jobs_in_shift'][key, idx] = df[(df.arrival_time >= data_window[0]) & (df.arrival_time < data_window[1])]
+
     # get ready_time for the first stage
     min_ready_time_series = dict(tmp.groupby(by='case_key').ready_time_sec.min())
+
     paras['min_ready_time_series'] = min_ready_time_series
-
-    for idx, half_pair in enumerate(half_day_pairs):
-        # idx is day index
-        for period, data_range in half_pair.items():
-            tmp = df[df.case_stage_rank == 1]
-            tmp = tmp[
-                (tmp.work_ready_timestamp > data_range[0]) & (tmp.work_ready_timestamp < data_range[1])].case_key
-            period_jobs = list(tmp.unique())
-
-            paras['day_jobs'][idx, period] = period_jobs
 
     print(df.groupby(by=['client'])['duration_sec'].describe())
     print(df['duration_sec'].min())
