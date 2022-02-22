@@ -335,7 +335,7 @@ def model():
         result_df['Total'] = result_df.iloc[:, -nbStaff:-1].sum(axis=1)
 
         print(result_df['Total'])
-        to_csv(result_df, 'assignment.csv')
+        write_to_csv(result_df, 'assignment.csv')
 
         # i want to know each worker is doing what station at each shift
         output = []
@@ -362,7 +362,7 @@ def model():
         shift_strs = ['shift_' + str(s) for s in range(nb_shifts)]
         columns = ['worker', 'day'] + shift_strs
         result_df = pd.DataFrame(output, columns=columns)
-        to_csv(result_df, 'station_worker.csv')
+        write_to_csv(result_df, 'station_worker.csv')
 
         # i want to know for each worker the shift pattern
         shift_pattern_output = {}
@@ -380,7 +380,7 @@ def model():
         shift_strs = ['shift_' + str(s) for s in range(nb_shifts)]
         columns = ['worker', 'day'] + shift_strs
         result_df = pd.DataFrame(output, columns=columns)
-        to_csv(result_df, 'worker_shift.csv')
+        write_to_csv(result_df, 'worker_shift.csv')
         temp = result_df[result_df.day == 0]
         print(temp)
         if objective == 'even_shift':

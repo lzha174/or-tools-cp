@@ -343,7 +343,7 @@ stats_start_ready_date  = '2021-05-18 00:00:00'
 stat_end_ready_date  = '2021-05-21 00:00:00'
 stats_df = df[(df.min_ready_time >= stats_start_ready_date) & (df.min_ready_time < stat_end_ready_date)]
 stats_df = stats_df.sort_values(["case_key", "case_stage_rank"], ascending=(True, True))
-stats_df.to_csv('stats_out.csv', index = False)
+stats_df.write_to_csv('stats_out.csv', index = False)
 
 
 

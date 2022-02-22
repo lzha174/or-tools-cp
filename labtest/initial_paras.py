@@ -90,7 +90,7 @@ for step in range(0, nb_shifts):
     shift = shift_pattern_type(start=start, start_str=start_str, end=end, end_str=end_str)
     shift_patterns[step] = shift
     # for now , make staffing same # 5 is preprocess stage before embedding
-    staffing[step] = {0: 1, 1: 2, 2:2, 3: 1000, 4: 2, 5: 2}
+    staffing[step] = {0: 1, 1: 3, 2:2, 3: 1000, 4: 2, 5: 2}
 
 
 def staffing_to_csv(duplicate = True):
@@ -115,7 +115,7 @@ def staffing_to_csv(duplicate = True):
     result_df = pd.DataFrame(output,
                              columns=['day', 'period', 'stage', 'value'])
 
-    to_csv(result_df, 'staff.csv')
+    write_to_csv(result_df, 'staff.csv')
     return result_df
 
 
@@ -227,7 +227,7 @@ next_task_type = collections.namedtuple('next_task', 'job_key, task')
 root_captioning = ''
 
 
-def to_csv(df, filename):
+def write_to_csv(df, filename):
     filename = os.path.join(root_captioning, filename)
     df.to_csv(filename, index=False)
 
@@ -288,7 +288,7 @@ def load_real_data():
     df.drop(df[df['embedding_count'] >= 3].index, inplace=True)
 
     # df.to_csv('filtered_data.csv', index=False)
-    to_csv(df, 'filtered_data.csv')
+    write_to_csv(df, 'filtered_data.csv')
 
     print(df["case_key"].head(2))
     print(df.groupby(by='client').duration_sec.quantile(0.75))

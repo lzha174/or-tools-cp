@@ -129,7 +129,7 @@ def record_result(start_date=18):
     result_df[["start", "end", "ready_time"]] = result_df[["start", "end", "ready_time"]].apply(pd.to_datetime)
     result_df = result_df.sort_values(["case_key", "case_stage_rank"], ascending=(False, True))
     # result_df.to_csv('out.csv', index=False)
-    to_csv(result_df, 'out.csv')
+    write_to_csv(result_df, 'out.csv')
     print(result_df.head)
     print('im here ')
 
@@ -166,7 +166,7 @@ def record_result(start_date=18):
     print('finished case', len(finished_case))
     finished = stats_df[stats_df['case_key'].isin(finished_case)]
     # finished.to_csv('stats_out.csv', index=False)
-    to_csv(finished, 'stats_out.csv')
+    write_to_csv(finished, 'stats_out.csv')
 
     # the last stage is signout
 
@@ -190,12 +190,12 @@ def record_result(start_date=18):
 
     result = pd.concat([total_duration_df, bench_duration_df], axis=1, join='inner')
     # result.to_csv('duration_compare.csv')
-    to_csv(result, 'duration_compare.csv')
+    write_to_csv(result, 'duration_compare.csv')
 
     utilisation_df = pd.DataFrame(paras['utilisation'],
                                   columns=['day', 'period', 'client', 'utilisation'])
     # utilisation_df.to_csv('utilisation.csv', index=False)
-    to_csv(utilisation_df, 'utilisation.csv')
+    write_to_csv(utilisation_df, 'utilisation.csv')
     for day in range(start_date, end_date):
         stats_start_ready_date = f'2021-05-{day} 00:00:00'
 
