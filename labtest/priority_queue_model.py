@@ -63,7 +63,7 @@ def row_process(row, day, period):
 
     if case_key_idx not in paras['job_rank']:
         #paras['job_rank'][case_key_idx] = task_ranks[counter % 2]
-        paras['job_rank'][case_key_idx] = 1
+        paras['job_rank'][case_key_idx] = 0
         counter = counter + 1
     client_idx = paras[name_to_idx_client_str][row.client]
     priority_idx = paras[name_to_idx_priority_str][row.case_priority]
@@ -370,10 +370,10 @@ def process__high_rank_queue(day_index, period):
                     has_task_to_process = True
             if has_task_to_process == False: return
             # find a worker
-            worker = stage_workers[stage].next_avaliable_worker(task.get_ready_time(), task.duration)
+            worker, task_start_time, useAppend = stage_workers[stage].insert_into_idle(task.get_ready_time(), task.duration)
             if worker is not None:
-                task_start_time = custom_max(worker.get_avaliable_time(), task.get_ready_time())
-                worker.update_avaliable_time(task.get_ready_time(), task.duration)
+                if useAppend:
+                    worker.update_avaliable_time(task.get_ready_time(), task.duration)
                 # print('after assign')
                 # print(worker)
                 # mark this task finished for that job set the task interval
@@ -386,7 +386,6 @@ def process__high_rank_queue(day_index, period):
                 high_rank_queue_from_last_shift.append(task)
         else:
             priority = task.priority
-            worker = None
             if priority == paras[nine_hour_priority_idx_str]:
                 # allJobs.show_job(next_task.job_key)
                 # put this into night batch
@@ -472,32 +471,9 @@ def process_low_rank_queue(day_index, period):
             if has_task_to_process == False: return
             # find a worker
             # first see if we can find a worker by inserting task into idle intervals after processing high rank tasks
-            insert_worker, insert_task_start_time = stage_workers[stage].insert_into_idle(task.get_ready_time(), task.duration)
-            # check if append to the end of a worker task list, see which one start first
-            append_worker = stage_workers[stage].next_avaliable_worker(task.get_ready_time(), task.duration)
-            if append_worker is not None:
-                append_task_start_time = custom_max(append_worker.get_avaliable_time(), task.get_ready_time())
-            worker = None
-            use_append = False
-            if insert_worker is None:
-                if append_worker is not None:
-                    worker = append_worker
-                    task_start_time = append_task_start_time
-                    use_append = True
-            else:
-                # insert worker is not none
-                if append_worker is not None:
-                    if append_task_start_time < insert_task_start_time:
-                        worker = append_worker
-                        task_start_time = append_task_start_time
-                        use_append= True
-                    else:
-                        worker = insert_worker
-                        task_start_time = insert_task_start_time
-                else:
-                    # append worker is none
-                    worker = insert_worker
-                    task_start_time = insert_task_start_time
+            # improement: cheapest inseration including appending to the end
+            worker, task_start_time, use_append = stage_workers[stage].insert_into_idle(task.get_ready_time(), task.duration)
+
             if worker is not None:
 
                 # we can't insert, append this task to the end of next avliable worker

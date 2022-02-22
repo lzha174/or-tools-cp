@@ -39,7 +39,8 @@ class WorkerClass:
         else:
             self.stage = paras[batch_stage_idx_str]
 
-    def find_candidate_idle_interval(self, task_ready_time, duration):
+    def find_insertion(self, task_ready_time, duration):
+        # return task start time and if this task is appended to the end
         # go through the array of idle itnervals, find the first idle itnerval that can allocate this task
         index_to_modify = None
         left_interval = None
@@ -72,9 +73,11 @@ class WorkerClass:
             if right_interval is not None:
                 self.idle_intervals.insert(insert_idx, right_interval)
             self.update_gantt(duration, task_start_time)
-            return task_start_time
+            return task_start_time, False
         else:
-            return None
+            # no place to insert between idle intervals
+            # return the position after next avalible time
+            return custom_max(self.next_avalaible_time, task_ready_time), True
 
 
 
@@ -194,11 +197,20 @@ class WokrerCollection:
                 print(left, right)
 
     def insert_into_idle(self, ready_time, duration):
+        # find the worker with earliest insertion
+        # it could be the end of the worker current task list if we cant insert into idle intervals between already allocated tasks
+        min_start_time = float('inf')
+        best_worker = None
+        isAppend = True
         for worker in self.workers:
-            task_start_time = worker.find_candidate_idle_interval(ready_time, duration)
+            task_start_time, isAppend = worker.find_insertion(ready_time, duration)
             if task_start_time is not None:
-                return worker, task_start_time
-        return None, None
+                if task_start_time < min_start_time:
+                    min_start_time = task_start_time
+                    best_worker = worker
+
+
+        return best_worker, min_start_time, isAppend
 
     def next_avaliable_worker(self, ready_time, duration):
         next_avalible_time = None
