@@ -360,7 +360,7 @@ def assign_for_shift(day_index=0, period=2):
                     find_a_worker = True
                     # assign this task to thie worker
                     task_start_time = max(worker.get_avaliable_time(), tasks.task.get_ready_time())
-                    worker.update_avaliable_time(tasks.task.get_ready_time(), tasks.task.duration)
+                    worker.update_last_task_finish_time(tasks.task.get_ready_time(), tasks.task.duration)
                     # print('after assign')
                     # print(worker)
                     # mark this task finished for that job set the task interval
@@ -405,7 +405,7 @@ def assign_for_shift(day_index=0, period=2):
                         find_a_worker = True
                         # print(next_task.task)
                         task_start_time = max(worker.get_avaliable_time(), next_task.task.get_ready_time())
-                        worker.update_avaliable_time(next_task.task.get_ready_time(), duration)
+                        worker.update_last_task_finish_time(next_task.task.get_ready_time(), duration)
                         allJobs.mark_job_task_finish(next_task.job_key, task_start_time)
                     # allJobs.show_job(next_task.job_key)
             # no worker is avaliable for any current task to do, a worker is avliable if next avaliable time is before shift ending time

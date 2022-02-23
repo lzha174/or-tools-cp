@@ -2,7 +2,7 @@
 from collections import deque
 import bisect
 from utilisation_plot import *
-from priorityschedulingclasses import *
+from priorityschedulingclasswithbreak import *
 
 task_type = collections.namedtuple('task',
                                    'case_key_idx client_idx priority_idx duration ready_time order first_task_ready_time task_rank')
@@ -62,8 +62,8 @@ def row_process(row, day, period):
         job_data[case_key_idx] = []
 
     if case_key_idx not in paras['job_rank']:
-        paras['job_rank'][case_key_idx] = task_ranks[counter % 2]
-        #paras['job_rank'][case_key_idx] = 1
+        #paras['job_rank'][case_key_idx] = task_ranks[counter % 2]
+        paras['job_rank'][case_key_idx] = 1
         counter = counter + 1
     client_idx = paras[name_to_idx_client_str][row.client]
     priority_idx = paras[name_to_idx_priority_str][row.case_priority]
@@ -370,7 +370,7 @@ def process_queue(day_index, period, task_queue, queue_from_last_shift):
             worker, task_start_time, useAppend = stage_workers[stage].insert_into_idle(task.get_ready_time(), task.duration)
             if worker is not None:
                 if useAppend:
-                    worker.update_avaliable_time(task.get_ready_time(), task.duration)
+                    worker.update_last_task_finish_time(task.get_ready_time(), task.duration)
                 # print('after assign')
                 # print(worker)
                 # mark this task finished for that job set the task interval
@@ -420,7 +420,7 @@ def process_queue(day_index, period, task_queue, queue_from_last_shift):
                 task_start_time = custom_max(worker.get_avaliable_time(), task.get_ready_time())
                 # need to update embedding duration based on lunch or night
                 task.duration = duration
-                worker.update_avaliable_time(task.get_ready_time(), duration)
+                worker.update_last_task_finish_time(task.get_ready_time(), duration)
                 job = allJobs.mark_job_task_finish(task.job_id, task_start_time)
                 next_task = job.get_next_task()
                 #print('next task is ', next_task)
@@ -511,7 +511,7 @@ def process__high_rank_queue(day_index, period):
             worker, task_start_time, useAppend = stage_workers[stage].insert_into_idle(task.get_ready_time(), task.duration)
             if worker is not None:
                 if useAppend:
-                    worker.update_avaliable_time(task.get_ready_time(), task.duration)
+                    worker.update_last_task_finish_time(task.get_ready_time(), task.duration)
                 # print('after assign')
                 # print(worker)
                 # mark this task finished for that job set the task interval
@@ -561,7 +561,7 @@ def process__high_rank_queue(day_index, period):
                 task_start_time = custom_max(worker.get_avaliable_time(), task.get_ready_time())
                 # need to update embedding duration based on lunch or night
                 task.duration = duration
-                worker.update_avaliable_time(task.get_ready_time(), duration)
+                worker.update_last_task_finish_time(task.get_ready_time(), duration)
                 job = allJobs.mark_job_task_finish(task.job_id, task_start_time)
                 next_task = job.get_next_task()
                 #print('next task is ', next_task)
@@ -616,7 +616,7 @@ def process_low_rank_queue(day_index, period):
 
                 # we can't insert, append this task to the end of next avliable worker
                 if use_append:
-                    worker.update_avaliable_time(task.get_ready_time(), task.duration)
+                    worker.update_last_task_finish_time(task.get_ready_time(), task.duration)
                 # print('after assign')
                 # print(worker)
                 # mark this task finished for that job set the task interval
@@ -667,7 +667,7 @@ def process_low_rank_queue(day_index, period):
                 task_start_time = custom_max(worker.get_avaliable_time(), task.get_ready_time())
                 # need to update embedding duration based on lunch or night
                 task.duration = duration
-                worker.update_avaliable_time(task.get_ready_time(), duration)
+                worker.update_last_task_finish_time(task.get_ready_time(), duration)
                 job = allJobs.mark_job_task_finish(task.job_id, task_start_time)
                 next_task = job.get_next_task()
                 #print('next task is ', next_task)
@@ -739,17 +739,12 @@ def assign_model(current_staffing, day_index_local=1):
                 task_queue = initialise_queue(queue_from_last_shift, rank)
                 # start process
                 process_queue(day, idx, task_queue, queue_from_last_shift)
-            if False:
-                initilise_high_rank_queue()
-                process__high_rank_queue(day, idx)
-                if (day == 0 and idx == 0):
-                    print('idle are ')
-                    stage_workers[0].show_idle_intervals()
-                initilise_low_rank_queue()
-                process_low_rank_queue(day, idx)
-            if (day == 0 and idx == 0):
-                print('after low rank idle are ')
-                stage_workers[0].show_idle_intervals()
+                if True:
+                    if (day == 0 and idx == 1 and rank == 1):
+                        print('idle are ')
+                        stage_workers[0].show_idle_intervals()
+
+
 
             # get_break_stats()
 

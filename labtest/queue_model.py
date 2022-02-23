@@ -335,7 +335,7 @@ def process_queue(day_index, period):
             worker = stage_workers[stage].next_avaliable_worker(task.get_ready_time(), task.duration)
             if worker is not None:
                 task_start_time = custom_max(worker.get_avaliable_time(), task.get_ready_time())
-                worker.update_avaliable_time(task.get_ready_time(), task.duration)
+                worker.update_last_task_finish_time(task.get_ready_time(), task.duration)
                 # print('after assign')
                 # print(worker)
                 # mark this task finished for that job set the task interval
@@ -386,7 +386,7 @@ def process_queue(day_index, period):
                 task_start_time = custom_max(worker.get_avaliable_time(), task.get_ready_time())
                 # need to update embedding duration based on lunch or night
                 task.duration = duration
-                worker.update_avaliable_time(task.get_ready_time(), duration)
+                worker.update_last_task_finish_time(task.get_ready_time(), duration)
                 job = allJobs.mark_job_task_finish(task.job_id, task_start_time)
                 next_task = job.get_next_task()
                 #print('next task is ', next_task)
