@@ -49,7 +49,6 @@ class WorkerClass:
     def find_insertion(self, task_ready_time, duration):
         # return task start time and if this task is appended to the end
         # go through the array of idle itnervals, find the first idle itnerval that can allocate this task
-
         index_to_modify = None
         left_interval = None
         right_interval = None
@@ -91,6 +90,10 @@ class WorkerClass:
         else:
             # no place to insert between idle intervals
             # return the position after next avalible time
+            task_start_time = custom_max(self.last_task_finish_time, task_ready_time)
+            if task_start_time + duration > self.end_time:
+                return None, False
+            print(format_time(self.last_task_finish_time), format_time(task_ready_time))
             return custom_max(self.last_task_finish_time, task_ready_time), True
 
     def show_idle_intervals(self):
@@ -107,7 +110,7 @@ class WorkerClass:
 
         # how to make avalible time jump out of ounch time
         self.last_task_finish_time = task_start_time + duration
-
+        print('last finish time', format_time(self.last_task_finish_time))
         self.update_gantt(duration, task_start_time)
 
         if self.stage != paras[batch_stage_idx_str] and self.stage != nigh_stage:
@@ -117,7 +120,8 @@ class WorkerClass:
             else:
                 # have an idle interval between previous avaliable time and task start time
                 assert (task_start_time >= previous_avaliable_time)
-                self.idle_intervals.append(pd.Interval(left = previous_avaliable_time, right = task_start_time, closed='left'))
+                if (task_start_time > previous_avaliable_time):
+                    self.idle_intervals.append(pd.Interval(left = previous_avaliable_time, right = task_start_time, closed='left'))
 
 
             # remember the first task time after last break

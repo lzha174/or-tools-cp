@@ -63,7 +63,7 @@ def row_process(row, day, period):
 
     if case_key_idx not in paras['job_rank']:
         #paras['job_rank'][case_key_idx] = task_ranks[counter % 2]
-        paras['job_rank'][case_key_idx] = 1
+        paras['job_rank'][case_key_idx] = 0
         counter = counter + 1
     client_idx = paras[name_to_idx_client_str][row.client]
     priority_idx = paras[name_to_idx_priority_str][row.case_priority]
@@ -177,6 +177,14 @@ def record_result(start_date=18):
     finished = stats_df[stats_df['case_key'].isin(finished_case)]
     # finished.to_csv('stats_out.csv', index=False)
     write_to_csv(finished, 'stats_out.csv')
+
+    temp = stats_df[stats_df.case_stage_rank == 1].sort_values(["start"], ascending=(True))
+    case_key = temp['case_key'].tolist()
+    for i in range(len(case_key) - 1):
+        print(case_key[i], temp[temp.case_key == case_key[i]].end.values[0], case_key[i+1],temp[temp.case_key == case_key[i + 1]].start.values[0])
+        assert( temp[temp.case_key == case_key[i]].end.values[0] <= temp[temp.case_key == case_key[i + 1]].start.values[0] )
+
+
 
     # the last stage is signout
 
@@ -358,7 +366,7 @@ def process_queue(day_index, period, task_queue, queue_from_last_shift):
 
             while has_task_to_process is False:
                 if task.ready_time + task.duration >= ends_time:
-                    queue_from_last_shift.append(task)
+                    bisect.insort_right(queue_from_last_shift, task)
                     if len(task_queue) == 0: break
                     task = task_queue.popleft()
 
@@ -367,9 +375,12 @@ def process_queue(day_index, period, task_queue, queue_from_last_shift):
             if has_task_to_process == False:
                 return
             # find a worker
+            if ( task.job_id == 1737) and task.client_idx == 0:
+                print('i')
             worker, task_start_time, useAppend = stage_workers[stage].insert_into_idle(task.get_ready_time(), task.duration)
             if worker is not None:
                 if useAppend:
+                    print(task)
                     worker.update_last_task_finish_time(task.get_ready_time(), task.duration)
                 # print('after assign')
                 # print(worker)
@@ -380,7 +391,7 @@ def process_queue(day_index, period, task_queue, queue_from_last_shift):
 
             # if there is no worker for this task in this shift, append this task to next shift
             else:
-                queue_from_last_shift.append(task)
+                bisect.insort_right(queue_from_last_shift, task)
         else:
             priority = task.priority
             if priority == paras[nine_hour_priority_idx_str]:
@@ -425,7 +436,7 @@ def process_queue(day_index, period, task_queue, queue_from_last_shift):
                 next_task = job.get_next_task()
                 #print('next task is ', next_task)
             else:
-                queue_from_last_shift.append(task)
+                bisect.insort_right(queue_from_last_shift, task)
 
         if next_task is not None:
             #if next_task.job_id == 1805 and next_task.client_idx == 1:
@@ -732,17 +743,22 @@ def assign_model(current_staffing, day_index_local=1):
             define_workers(day, idx)
 
             # process jobs in ranking order
-            for rank in range(2):
+            for rank in range(1):
                 task_queue = queue_array[rank][0]
                 queue_from_last_shift = queue_array[rank][1]
+
                 # copy first task of job data and unifnished tasks from last shift into this queue
                 task_queue = initialise_queue(queue_from_last_shift, rank)
                 # start process
                 process_queue(day, idx, task_queue, queue_from_last_shift)
+
                 if True:
-                    if (day == 0 and idx == 1 and rank == 1):
+                    if (day == 0 and idx == 1 and rank == 0):
                         print('idle are ')
-                        stage_workers[0].show_idle_intervals()
+                        print(queue_from_last_shift)
+                        for t in queue_from_last_shift:
+                            print(t)
+
 
 
 

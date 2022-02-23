@@ -90,7 +90,7 @@ for step in range(0, nb_shifts):
     shift = shift_pattern_type(start=start, start_str=start_str, end=end, end_str=end_str)
     shift_patterns[step] = shift
     # for now , make staffing same # 5 is preprocess stage before embedding
-    staffing[step] = {0: 1, 1: 1, 2:2, 3: 1000, 4: 2, 5: 3}
+    staffing[step] = {0: 1, 1: 2, 2:2, 3: 1000, 4: 2, 5: 3}
 
 
 def staffing_to_csv(duplicate = True):
