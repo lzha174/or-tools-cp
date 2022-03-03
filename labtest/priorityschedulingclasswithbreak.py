@@ -33,16 +33,15 @@ class WorkerClass:
         self.task_gantt = []
         self.idle_intervals = []
         self.total_tasks_assgined = 0
+        self.interval_modify = None
+        self.stage =  stage
         # I want to add a maximum nb of tasks you can do for each wokrer per hour
         if stage != paras[batch_stage_idx_str] and stage != nigh_stage:
-            self.stage = stage
-        else:
-            self.stage = paras[batch_stage_idx_str]
 
-        # insert the lunch as a fake task, this may create idle interval before  lunch, marke the last finish task as lunch finish task
-        if lunch_start_time > start_time and lunch_end_time < end_time:
-            self.idle_intervals.append(pd.Interval(left = start_time, right = lunch_start_time, closed = 'left'))
-            self.last_task_finish_time = lunch_end_time
+            # insert the lunch as a fake task, this may create idle interval before  lunch, marke the last finish task as lunch finish task
+            if lunch_start_time > start_time and lunch_end_time < end_time:
+                self.idle_intervals.append(pd.Interval(left = start_time, right = lunch_start_time, closed = 'left'))
+                self.last_task_finish_time = lunch_end_time
 
 
 
@@ -74,70 +73,53 @@ class WorkerClass:
                     index_to_modify = idx
                     break
         if index_to_modify is not None:
-            del self.idle_intervals[index_to_modify]
-            insert_idx = index_to_modify
-            if left_interval is not None:
-                self.idle_intervals.insert(insert_idx, left_interval)
-                insert_idx = insert_idx + 1
-            if right_interval is not None:
-                self.idle_intervals.insert(insert_idx, right_interval)
-            self.update_gantt(duration, task_start_time)
-            if False:
-                if  task_ready_time > 43320 and self.stage == 0:
-                    print(format_time(task_ready_time))
-                    self.show_idle_intervals()
+            self.interval_modify = modify_worker_interval_type(index = index_to_modify, left_interval = left_interval, right_interval = right_interval)
+            #self.update_gantt(duration, task_start_time)
             return task_start_time, False
         else:
+            self.interval_modify = None
             # no place to insert between idle intervals
             # return the position after next avalible time
             task_start_time = custom_max(self.last_task_finish_time, task_ready_time)
             if task_start_time + duration > self.end_time:
                 return None, False
-            print(format_time(self.last_task_finish_time), format_time(task_ready_time))
+            #print(format_time(self.last_task_finish_time), format_time(task_ready_time))
             return custom_max(self.last_task_finish_time, task_ready_time), True
+
+    def modify_idle_interval(self):
+        #self.show_idle_intervals()
+        del self.idle_intervals[self.interval_modify.index]
+        insert_idx = self.interval_modify.index
+        if self.interval_modify.left_interval is not None:
+            self.idle_intervals.insert(insert_idx, self.interval_modify.left_interval)
+            insert_idx = insert_idx + 1
+        if self.interval_modify.right_interval is not None:
+            self.idle_intervals.insert(insert_idx, self.interval_modify.right_interval)
 
     def show_idle_intervals(self):
         for interval in self.idle_intervals:
             print(format_time(interval.left), format_time(interval.right))
 
-    def update_last_task_finish_time(self, task_ready_time, duration):
+    def update_last_task_finish_time(self, task_start_time, duration):
         # total busy time is used to calculate utilisation
         previous_avaliable_time = self.last_task_finish_time
         self.total_busy_time = self.total_busy_time + duration
         # notebook change to python_max
-        task_start_time = custom_max(task_ready_time, self.last_task_finish_time)
         # if next avlaible time is 12:50, how to make it pass lunch time??
 
         # how to make avalible time jump out of ounch time
         self.last_task_finish_time = task_start_time + duration
-        print('last finish time', format_time(self.last_task_finish_time))
-        self.update_gantt(duration, task_start_time)
+        #print('last finish time', format_time(self.last_task_finish_time))
 
         if self.stage != paras[batch_stage_idx_str] and self.stage != nigh_stage:
             # No task assigned yet, no idle interval
             if len(self.idle_intervals) == 0:
                 self.total_tasks_assgined = self.total_tasks_assgined + 1
-            else:
                 # have an idle interval between previous avaliable time and task start time
-                assert (task_start_time >= previous_avaliable_time)
-                if (task_start_time > previous_avaliable_time):
-                    self.idle_intervals.append(pd.Interval(left = previous_avaliable_time, right = task_start_time, closed='left'))
+            assert (task_start_time >= previous_avaliable_time)
+            if (task_start_time > previous_avaliable_time):
+                self.idle_intervals.append(pd.Interval(left = previous_avaliable_time, right = task_start_time, closed='left'))
 
-
-            # remember the first task time after last break
-            if self.first_task_start_before_break is None:
-                self.first_task_start_before_break = task_start_time
-                self.tasks_done_count_before_break = self.tasks_done_count_before_break + 1
-            # I am tired, take a break reset
-            elif self.tasks_done_count_before_break >= capacity_before_break[self.stage]:
-                # 10 mins break
-                self.last_task_finish_time = self.last_task_finish_time + 600
-                self.tasks_done_count_before_break = 0
-                self.first_task_start_before_break = None
-                self.total_breaks = self.total_breaks + 1
-            # I have not done enoughy
-            else:
-                self.tasks_done_count_before_break = self.tasks_done_count_before_break + 1
 
     def update_gantt(self, duration, task_start_time):
         task_gantt = [self.day, self.period, self.stage, self.idx, task_start_time, duration]
@@ -219,14 +201,20 @@ class WokrerCollection:
         best_worker = None
         isAppend = True
         for worker in self.workers:
-            task_start_time, isAppend = worker.find_insertion(ready_time, duration)
+            task_start_time, append = worker.find_insertion(ready_time, duration)
             if task_start_time is not None:
                 if task_start_time < min_start_time:
                     min_start_time = task_start_time
                     best_worker = worker
+                    isAppend = append
 
-
-        return best_worker, min_start_time, isAppend
+        if best_worker is not None:
+            if isAppend:
+                best_worker.update_last_task_finish_time(task_start_time=min_start_time, duration = duration)
+            else:
+                best_worker.modify_idle_interval()
+            best_worker.update_gantt(duration, min_start_time)
+        return best_worker, min_start_time
 
     def next_avaliable_worker(self, ready_time, duration):
         next_avalible_time = None
@@ -382,7 +370,6 @@ class JobCollection():
 
     def add_job(self, job):
         self.jobs[job.get_job_id()] = job
-        return job.__str__()
 
     def show_job(self, job_key):
         print(self.jobs[job_key])

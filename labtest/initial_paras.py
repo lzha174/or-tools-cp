@@ -57,6 +57,7 @@ shift_pattern_type = collections.namedtuple('shift', 'start start_str end end_st
 
 worker_profile_type = collections.namedtuple('profile', 'idx skillset')
 
+modify_worker_interval_type = collections.namedtuple('interval', 'index left_interval right_interval')
 
 # key is shift pattern index, value is staffing for each stage during this period
 
@@ -74,7 +75,7 @@ def format_staff_time(value):
 shift_patterns = {}
 staffing = {}
 staff_interval = 4
-nb_days = 7
+nb_days = 12
 nb_shifts = 3
 nb_fake_users = 10
 nb_days_rostering = 28
@@ -90,7 +91,7 @@ for step in range(0, nb_shifts):
     shift = shift_pattern_type(start=start, start_str=start_str, end=end, end_str=end_str)
     shift_patterns[step] = shift
     # for now , make staffing same # 5 is preprocess stage before embedding
-    staffing[step] = {0: 1, 1: 2, 2:2, 3: 1000, 4: 2, 5: 3}
+    staffing[step] = {0: 1, 1: 2, 2:4, 3: 1000, 4: 3, 5: 4}
 
 
 def staffing_to_csv(duplicate = True):
@@ -130,12 +131,13 @@ day_data_windows = {}  # index by day, save array of data windows
 for day in range(0, nb_days):
     day_value = 17 + day
     yester_day = day_value - 1
-    if day_value == 22:
-        day_value = 24
-        yester_day = 21
-    elif day_value == 23:
-        day_value = 25
-        yester_day = 24
+    if False:
+        if day_value == 22:
+            day_value = 24
+            yester_day = 21
+        elif day_value == 23:
+            day_value = 25
+            yester_day = 24
 
     data_start_loading = f'2021-05-{day_value}'
     data_finish_loading = f'2021-05-{day_value}'
@@ -154,7 +156,7 @@ for day in range(0, nb_days):
 
 for key, data in day_data_windows.items():
     print(f'day {key} data windows {data}')
-
+print('4')
 #  is it possible to know if a worker is busy or idle during an interval?
 # in an optimised solution, yes, you can assign new task to next avaliable worker, then measure utility,  in the real world, maybe not?
 
@@ -286,6 +288,10 @@ def load_real_data():
     # most embedding has no mor ethen 2 repeats, remove 4 3-time embeddings and 1 5-times embeddings
     # only consider embedding less than 3 for now
     df.drop(df[df['embedding_count'] >= 3].index, inplace=True)
+
+    c = df[df.embedding_count == 2].case_key.values[0]
+    c = (df[df.case_key == c])
+    c.to_csv('c.csv', index = False)
 
     # df.to_csv('filtered_data.csv', index=False)
     write_to_csv(df, 'filtered_data.csv')

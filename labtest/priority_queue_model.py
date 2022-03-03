@@ -1,7 +1,7 @@
 # importing "bisect" for bisection operations
 from collections import deque
 import bisect
-from utilisation_plot import *
+#from utilisation_plot import *
 from priorityschedulingclasswithbreak import *
 
 task_type = collections.namedtuple('task',
@@ -132,7 +132,7 @@ def add_finished_stats(row, finished_case):
 
 def record_result(start_date=18):
     logstr = []
-    end_date = start_date + 1
+    end_date = start_date + 4
     result_df = pd.DataFrame(paras['result'],
                              columns=['case_key', 'case_name', 'priority', 'client', 'case_stage_rank', 'start', 'end',
                                       'duration', 'ready_time'])
@@ -173,15 +173,16 @@ def record_result(start_date=18):
     tmp.apply(add_finished_stats, args=(finished_case,), axis=1)
     # get case_key
 
-    print('finished case', len(finished_case))
+
     finished = stats_df[stats_df['case_key'].isin(finished_case)]
     # finished.to_csv('stats_out.csv', index=False)
     write_to_csv(finished, 'stats_out.csv')
 
     temp = stats_df[stats_df.case_stage_rank == 1].sort_values(["start"], ascending=(True))
     case_key = temp['case_key'].tolist()
+
     for i in range(len(case_key) - 1):
-        print(case_key[i], temp[temp.case_key == case_key[i]].end.values[0], case_key[i+1],temp[temp.case_key == case_key[i + 1]].start.values[0])
+        #print(case_key[i], temp[temp.case_key == case_key[i]].end.values[0], case_key[i+1],temp[temp.case_key == case_key[i + 1]].start.values[0])
         assert( temp[temp.case_key == case_key[i]].end.values[0] <= temp[temp.case_key == case_key[i + 1]].start.values[0] )
 
 
@@ -214,6 +215,8 @@ def record_result(start_date=18):
                                   columns=['day', 'period', 'client', 'utilisation'])
     # utilisation_df.to_csv('utilisation.csv', index=False)
     write_to_csv(utilisation_df, 'utilisation.csv')
+    print('finished case', len(finished_case))
+    total_cases_to_collect = 0
     for day in range(start_date, end_date):
         stats_start_ready_date = f'2021-05-{day} 00:00:00'
 
@@ -222,12 +225,13 @@ def record_result(start_date=18):
         f = df[df.case_stage_rank == 1]
         f = f[(f.work_ready_timestamp > stats_start_ready_date) & (f.work_ready_timestamp < stat_end_ready_date)]
         # how many jobs in this day
-        print(stats_start_ready_date, 'total jobs', len(f.index))
+        print(stats_start_ready_date, stat_end_ready_date,  'total jobs', len(f.index))
 
         f_finished = stats_df[stats_df.case_stage_rank == 1]
         f_finished = f_finished[
             (f_finished.min_ready_time > stats_start_ready_date) & (f_finished.min_ready_time < stat_end_ready_date)]
         print(stats_start_ready_date + ' jobs that are in the scheduling ', len(f_finished.index))
+        total_cases_to_collect = total_cases_to_collect + len(f.index)
         # I am happy if a few of them is not finished in my rolling window for local serach
         #assert (len(finished_case) > 0.9 * len(f_finished))
         #finished_percentage = len(finished_case) / (1.0* len(f_finished))
@@ -236,7 +240,7 @@ def record_result(start_date=18):
     reach_target = False
     #if finished_percentage >= 0.95 and total_duration_df['optimised_duration'].mean() - timedelta(days = 2) <timedelta(seconds = 1):
     #    reach_target = True
-
+    print('finisihed percetage', len(finished_case)/float(total_cases_to_collect))
     #print(total_duration_df['optimised_duration'].mean() - timedelta(days = 2) < timedelta(hours = 10))
     return total_duration_df['optimised_duration'].mean(), reach_target
 
@@ -320,13 +324,7 @@ def create_queues():
         queue_array.append((task_queue, queue_from_last_shift))
     return queue_array
 
-def foo(x,y):
-    x = 9
-    return
-x = 3
-y = 6
-foo(x,y)
-print(x)
+
 # every shift period, need to initilise the queue
 def initialise_queue(queue_from_last_shift, rank):
     # create a copy
@@ -357,10 +355,9 @@ def process_queue(day_index, period, task_queue, queue_from_last_shift):
     ends_time = int(shift_patterns[period].end * seconds_per_hour + day_index * day_in_seconds)
     while len(task_queue) > 0:
         task = task_queue.popleft()
-        job_id = task.job_id
-        stage = task.client_idx
+
         next_task = None
-        if stage != paras[batch_stage_idx_str]:
+        if task.client_idx != paras[batch_stage_idx_str]:
             has_task_to_process = False
             # if process this task pass the shift end time, we push this task to the next shift initilised queue and continue to next task
 
@@ -375,13 +372,11 @@ def process_queue(day_index, period, task_queue, queue_from_last_shift):
             if has_task_to_process == False:
                 return
             # find a worker
-            if ( task.job_id == 1737) and task.client_idx == 0:
-                print('i')
-            worker, task_start_time, useAppend = stage_workers[stage].insert_into_idle(task.get_ready_time(), task.duration)
+            if ( task.job_id == 1927 or task.job_id == 806) and task.client_idx == 0:
+                print('stage' , task.client_idx)
+            #print(task)
+            worker, task_start_time = stage_workers[task.client_idx].insert_into_idle(task.get_ready_time(), task.duration)
             if worker is not None:
-                if useAppend:
-                    print(task)
-                    worker.update_last_task_finish_time(task.get_ready_time(), task.duration)
                 # print('after assign')
                 # print(worker)
                 # mark this task finished for that job set the task interval
@@ -399,8 +394,9 @@ def process_queue(day_index, period, task_queue, queue_from_last_shift):
                 # put this into night batch
                 # print(stage_workers[nigh_stage])
                 duration = paras['duration_2'][9]
-                worker = stage_workers[nigh_stage].next_avaliable_worker(task.get_ready_time(),
-                                                                         duration)
+                worker, task_start_time = stage_workers[nigh_stage].insert_into_idle(task.get_ready_time(), duration)
+                #worker = stage_workers[nigh_stage].next_avaliable_worker(task.get_ready_time(),
+                #                                                         duration)
                 ready_time = format_time(task.get_ready_time())
                 # print(worker, ready_time, next_task.task.duration)
 
@@ -412,14 +408,14 @@ def process_queue(day_index, period, task_queue, queue_from_last_shift):
                 duration = paras['duration_2'][2]
                 # 2 hour prioity, put it into lunch batch if possible
                 # get next avalaible worker from two hour batch
-                worker = stage_workers[stage].next_avaliable_worker(task.get_ready_time(),
-                                                                    duration)
+                worker, task_start_time = stage_workers[task.client_idx].insert_into_idle(task.get_ready_time(), duration)
+                #worker = stage_workers[task.client_idx].next_avaliable_worker(task.get_ready_time(),
+                #                                                    duration)
 
                 if worker is None:
                     # passed lunch batch, go for night
                     duration = paras['duration_2'][9]
-                    worker = stage_workers[nigh_stage].next_avaliable_worker(task.get_ready_time(),
-                                                                             duration)
+                    worker, task_start_time = stage_workers[nigh_stage].insert_into_idle(task.get_ready_time(), duration)
 
                     if worker is not None:
                         paras['night_used_embeddings'] = paras['night_used_embeddings'] + 1
@@ -428,10 +424,10 @@ def process_queue(day_index, period, task_queue, queue_from_last_shift):
 
             if worker is not None:
                 # print(next_task.task)
-                task_start_time = custom_max(worker.get_avaliable_time(), task.get_ready_time())
+                #task_start_time = custom_max(worker.get_avaliable_time(), task.get_ready_time())
                 # need to update embedding duration based on lunch or night
                 task.duration = duration
-                worker.update_last_task_finish_time(task.get_ready_time(), duration)
+                #worker.update_last_task_finish_time(task.get_ready_time(), duration)
                 job = allJobs.mark_job_task_finish(task.job_id, task_start_time)
                 next_task = job.get_next_task()
                 #print('next task is ', next_task)
@@ -450,249 +446,6 @@ def process_queue(day_index, period, task_queue, queue_from_last_shift):
 
 
 
-high_rank_task_queue = deque([])
-high_rank_queue_from_last_shift = deque([])
-def initilise_high_rank_queue():
-    global high_rank_task_queue, high_rank_queue_from_last_shift
-    high_rank_task_queue = copy.deepcopy(high_rank_queue_from_last_shift)
-    for job, tasks in job_data.items():
-        new_job = JobClass()
-        new_job.set_job(job, tasks)
-        first_task = new_job.get_next_task()
-        if first_task.task_rank == 0:
-            # print(new_job)
-            allJobs.add_job(new_job)
-
-            bisect.insort_right(high_rank_task_queue, first_task)
-    return
-    for task in high_rank_task_queue:
-        print(task)
-
-
-low_rank_task_queue = deque([])
-low_rank_queue_from_last_shift = deque([])
-def initilise_low_rank_queue():
-    global low_rank_task_queue, low_rank_queue_from_last_shift
-    low_rank_task_queue = copy.deepcopy(low_rank_queue_from_last_shift)
-    for job, tasks in job_data.items():
-        new_job = JobClass()
-        new_job.set_job(job, tasks)
-        first_task = new_job.get_next_task()
-        if first_task.task_rank == 1:
-            # print(new_job)
-            allJobs.add_job(new_job)
-
-            bisect.insort_right(low_rank_task_queue, first_task)
-    return
-    print('low rank initial queue')
-    for task in low_rank_task_queue:
-        print(task)
-
-
-def process__high_rank_queue(day_index, period):
-
-    # the question is how to schedule jobs with priority......
-    # if I schule high priorityh jobs first, how to then insert low pirority jobs into free times bewteen high pirorities...
-    # this will be a total different way of finding a worker...if everything is processed in natual time order, I don't need to consider this problem
-    # when I schuedue a low priority job, go through each worker, find all time itervals between high prioirty jobs it has done, if there is one to fit, put this job in there
-    # and do not need to udate next avalible job time
-    # if there is no such interval, append this to the end of  worker schedule with earliest avalible time
-    global high_rank_task_queue, high_rank_queue_from_last_shift
-    high_rank_queue_from_last_shift = deque([])
-    ends_time = int(shift_patterns[period].end * seconds_per_hour + day_index * day_in_seconds)
-    while len(high_rank_task_queue) > 0:
-        task = high_rank_task_queue.popleft()
-        job_id = task.job_id
-        stage = task.client_idx
-        next_task = None
-        if stage != paras[batch_stage_idx_str]:
-            has_task_to_process = False
-            # if process this task pass the shift end time, we push this task to the next shift initilised queue and continue to next task
-
-            while has_task_to_process is False:
-                if task.ready_time + task.duration >= ends_time:
-                    high_rank_queue_from_last_shift.append(task)
-                    if len(high_rank_task_queue) == 0: break
-                    task = high_rank_task_queue.popleft()
-
-                else:
-                    has_task_to_process = True
-            if has_task_to_process == False: return
-            # find a worker
-            worker, task_start_time, useAppend = stage_workers[stage].insert_into_idle(task.get_ready_time(), task.duration)
-            if worker is not None:
-                if useAppend:
-                    worker.update_last_task_finish_time(task.get_ready_time(), task.duration)
-                # print('after assign')
-                # print(worker)
-                # mark this task finished for that job set the task interval
-                job = allJobs.mark_job_task_finish(task.job_id, task_start_time)
-                # append next task into the queue
-                next_task = job.get_next_task()
-
-            # if there is no worker for this task in this shift, append this task to next shift
-            else:
-                high_rank_queue_from_last_shift.append(task)
-        else:
-            priority = task.priority
-            if priority == paras[nine_hour_priority_idx_str]:
-                # allJobs.show_job(next_task.job_key)
-                # put this into night batch
-                # print(stage_workers[nigh_stage])
-                duration = paras['duration_2'][9]
-                worker = stage_workers[nigh_stage].next_avaliable_worker(task.get_ready_time(),
-                                                                         duration)
-                ready_time = format_time(task.get_ready_time())
-                # print(worker, ready_time, next_task.task.duration)
-
-                if worker is not None:
-                    paras['night_used_embeddings'] = paras['night_used_embeddings'] + 1
-                # print('next avaliable worker')
-                # print(worker)
-            else:
-                duration = paras['duration_2'][2]
-                # 2 hour prioity, put it into lunch batch if possible
-                # get next avalaible worker from two hour batch
-                worker = stage_workers[stage].next_avaliable_worker(task.get_ready_time(),
-                                                                    duration)
-
-                if worker is None:
-                    # passed lunch batch, go for night
-                    duration = paras['duration_2'][9]
-                    worker = stage_workers[nigh_stage].next_avaliable_worker(task.get_ready_time(),
-                                                                             duration)
-
-                    if worker is not None:
-                        paras['night_used_embeddings'] = paras['night_used_embeddings'] + 1
-                else:
-                    paras['lunch_used_embeddings'] = paras['lunch_used_embeddings'] + 1
-
-            if worker is not None:
-                # print(next_task.task)
-                task_start_time = custom_max(worker.get_avaliable_time(), task.get_ready_time())
-                # need to update embedding duration based on lunch or night
-                task.duration = duration
-                worker.update_last_task_finish_time(task.get_ready_time(), duration)
-                job = allJobs.mark_job_task_finish(task.job_id, task_start_time)
-                next_task = job.get_next_task()
-                #print('next task is ', next_task)
-            else:
-                high_rank_queue_from_last_shift.append(task)
-
-        if next_task is not None:
-            #if next_task.job_id == 1805 and next_task.client_idx == 1:
-             #   print(next_task)
-            bisect.insort_right(high_rank_task_queue, next_task)
-
-        #print('after procesd')
-        #for task in high_rank_task_queue:
-        #    print(task)
-
-
-def process_low_rank_queue(day_index, period):
-
-    # the question is how to schedule jobs with priority......
-    # if I schule high priorityh jobs first, how to then insert low pirority jobs into free times bewteen high pirorities...
-    # this will be a total different way of finding a worker...if everything is processed in natual time order, I don't need to consider this problem
-    # when I schuedue a low priority job, go through each worker, find all time itervals between high prioirty jobs it has done, if there is one to fit, put this job in there
-    # and do not need to udate next avalible job time
-    # if there is no such interval, append this to the end of  worker schedule with earliest avalible time
-    global low_rank_task_queue, low_rank_queue_from_last_shift
-    low_rank_queue_from_last_shift = deque([])
-    ends_time = int(shift_patterns[period].end * seconds_per_hour + day_index * day_in_seconds)
-    while len(low_rank_task_queue) > 0:
-        task = low_rank_task_queue.popleft()
-        job_id = task.job_id
-        stage = task.client_idx
-        next_task = None
-        if stage != paras[batch_stage_idx_str]:
-            has_task_to_process = False
-            # if process this task pass the shift end time, we push this task to the next shift initilised queue and continue to next task
-
-            while has_task_to_process is False:
-                if task.ready_time + task.duration >= ends_time:
-                    low_rank_queue_from_last_shift.append(task)
-                    if len(low_rank_task_queue) == 0: break
-                    task = low_rank_task_queue.popleft()
-
-                else:
-                    has_task_to_process = True
-            if has_task_to_process == False: return
-            # find a worker
-            # first see if we can find a worker by inserting task into idle intervals after processing high rank tasks
-            # improement: cheapest inseration including appending to the end
-            worker, task_start_time, use_append = stage_workers[stage].insert_into_idle(task.get_ready_time(), task.duration)
-
-            if worker is not None:
-
-                # we can't insert, append this task to the end of next avliable worker
-                if use_append:
-                    worker.update_last_task_finish_time(task.get_ready_time(), task.duration)
-                # print('after assign')
-                # print(worker)
-                # mark this task finished for that job set the task interval
-                job = allJobs.mark_job_task_finish(task.job_id, task_start_time)
-                # append next task into the queue
-                next_task = job.get_next_task()
-
-                # if there is no worker for this task in this shift, append this task to next shift
-            else:
-                low_rank_queue_from_last_shift.append(task)
-        else:
-            priority = task.priority
-            worker = None
-            if priority == paras[nine_hour_priority_idx_str]:
-                # allJobs.show_job(next_task.job_key)
-                # put this into night batch
-                # print(stage_workers[nigh_stage])
-                duration = paras['duration_2'][9]
-                worker = stage_workers[nigh_stage].next_avaliable_worker(task.get_ready_time(),
-                                                                         duration)
-                ready_time = format_time(task.get_ready_time())
-                # print(worker, ready_time, next_task.task.duration)
-
-                if worker is not None:
-                    paras['night_used_embeddings'] = paras['night_used_embeddings'] + 1
-                # print('next avaliable worker')
-                # print(worker)
-            else:
-                duration = paras['duration_2'][2]
-                # 2 hour prioity, put it into lunch batch if possible
-                # get next avalaible worker from two hour batch
-                worker = stage_workers[stage].next_avaliable_worker(task.get_ready_time(),
-                                                                    duration)
-
-                if worker is None:
-                    # passed lunch batch, go for night
-                    duration = paras['duration_2'][9]
-                    worker = stage_workers[nigh_stage].next_avaliable_worker(task.get_ready_time(),
-                                                                             duration)
-
-                    if worker is not None:
-                        paras['night_used_embeddings'] = paras['night_used_embeddings'] + 1
-                else:
-                    paras['lunch_used_embeddings'] = paras['lunch_used_embeddings'] + 1
-
-            if worker is not None:
-                # print(next_task.task)
-                task_start_time = custom_max(worker.get_avaliable_time(), task.get_ready_time())
-                # need to update embedding duration based on lunch or night
-                task.duration = duration
-                worker.update_last_task_finish_time(task.get_ready_time(), duration)
-                job = allJobs.mark_job_task_finish(task.job_id, task_start_time)
-                next_task = job.get_next_task()
-                #print('next task is ', next_task)
-            else:
-                low_rank_queue_from_last_shift.append(task)
-
-        if next_task is not None:
-            #if next_task.job_id == 1805 and next_task.client_idx == 1:
-             #   print(next_task)
-            bisect.insort_right(low_rank_task_queue, next_task)
-
-        #print('low rank after procesd')
-        #for task in low_rank_task_queue:
-        #    print(task)
 
 
 def define_jobs():
@@ -718,7 +471,7 @@ def assign_model(current_staffing, day_index_local=1):
     current_day = 17 + day_index_local
 
     data_rolling_window_lower_bound = day_index_local - 1
-    data_rolling_window_upper_bound = day_index_local + 2
+    data_rolling_window_upper_bound = day_index_local + 4
 
     paras[workers_str] = {}  # key day, period, stage, value is a collection of workers for that shift
 
@@ -726,8 +479,8 @@ def assign_model(current_staffing, day_index_local=1):
     queue_array = create_queues()
     global job_data
     for day, data_windows in day_data_windows.items():
-        if day < data_rolling_window_lower_bound: continue
-        if day > data_rolling_window_upper_bound: break
+        #if day < data_rolling_window_lower_bound: continue
+        #if day > data_rolling_window_upper_bound: break
         job_today = 0
         paras['night_used_embeddings'] = 0
         paras['lunch_used_embeddings'] = 0
@@ -737,7 +490,7 @@ def assign_model(current_staffing, day_index_local=1):
             paras['full'] = False
             load_new_day(day, idx)
             job_today = job_today + len(job_data)
-            #print('total jobs {} for day {} period {} is {}'.format(data_window, day, idx, len(job_data)))
+            print('total jobs {} for day {} period {} is {}'.format(data_window, day, idx, len(job_data)))
             # if (len(job_data) == 0): continue
 
             define_workers(day, idx)
@@ -752,7 +505,7 @@ def assign_model(current_staffing, day_index_local=1):
                 # start process
                 process_queue(day, idx, task_queue, queue_from_last_shift)
 
-                if True:
+                if False:
                     if (day == 0 and idx == 1 and rank == 0):
                         print('idle are ')
                         print(queue_from_last_shift)
@@ -769,6 +522,7 @@ def assign_model(current_staffing, day_index_local=1):
         # print('lunch used', paras['lunch_used_embeddings'])
     #get_gantt()
     average_time, reach_target = record_result(current_day)
+    print('last queue', len(queue_from_last_shift))
     #return average_time, reach_target
 
 
@@ -805,12 +559,12 @@ def get_gantt():
     print('sliced nb are ', len(sliced_df))
     sliced_df['bar4'] = sliced_df.values.tolist()
     output = sliced_df['bar4'].values.tolist()
-    draw_gannt(output)
+
 
 
 a = datetime.datetime.now()
 # repeat_local_search()
-assign_model(staffing, 0)
+assign_model(staffing, 1)
 #shift_local_search(1)
 #staffing_to_csv(True)
 b = datetime.datetime.now()
