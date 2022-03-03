@@ -14,7 +14,7 @@ import random
 
 # for each worker I want to know all the idle intervals so far
 class WorkerClass:
-    def __init__(self, idx, day, period, start_time, end_time, lunch_start_time, lunch_end_time, stage):
+    def __init__(self, idx, day, period, start_time, end_time, lunch_start_time, lunch_end_time, stage, weight = 1):
         self.idx = idx
         self.day = day
         self.period = period
@@ -35,6 +35,7 @@ class WorkerClass:
         self.total_tasks_assgined = 0
         self.interval_modify = None
         self.stage =  stage
+        self.weight = weight
         # I want to add a maximum nb of tasks you can do for each wokrer per hour
         if stage != paras[batch_stage_idx_str] and stage != nigh_stage:
 
@@ -148,9 +149,15 @@ class WorkerClass:
 
 
 class WokrerCollection:
-    def __init__(self, day, period, stage, nb_worker, start_time, end_time, lunch_start_time, lunch_end_time):
-        self.workers = [WorkerClass(i, day, period, start_time, end_time, lunch_start_time, lunch_end_time, stage) for i
-                        in range(nb_worker)]
+    def __init__(self, day, period, stage, nb_worker, start_time, end_time, lunch_start_time, lunch_end_time, stage_weights = []):
+        self.workers = []
+        for i in range(nb_worker):
+            if i in stage_weights:
+                worker = WorkerClass(i, day, period, start_time, end_time, lunch_start_time, lunch_end_time, stage, stage_weights[i])
+            else:
+                worker = WorkerClass(i, day, period, start_time, end_time, lunch_start_time, lunch_end_time, stage)
+            self.workers.append(worker)
+
         self.stage = stage
         self.start = format_time(start_time)
         self.end = format_time(end_time)
