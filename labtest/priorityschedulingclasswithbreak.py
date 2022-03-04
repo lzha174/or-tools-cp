@@ -39,7 +39,7 @@ class WorkerClass:
         if stage != paras[batch_stage_idx_str] and stage != nigh_stage:
 
             # insert the lunch as a fake task, this may create idle interval before  lunch, marke the last finish task as lunch finish task
-            if lunch_start_time > start_time and lunch_end_time < end_time:
+            if lunch_start_time >= start_time and lunch_end_time <= end_time:
                 self.idle_intervals.append(pd.Interval(left = start_time, right = lunch_start_time, closed = 'left'))
                 self.last_task_finish_time = lunch_end_time
 
@@ -201,6 +201,7 @@ class WokrerCollection:
         best_worker = None
         isAppend = True
         for worker in self.workers:
+            #print(worker)
             task_start_time, append = worker.find_insertion(ready_time, duration)
             if task_start_time is not None:
                 if task_start_time < min_start_time:

@@ -75,7 +75,7 @@ def format_staff_time(value):
 shift_patterns = {}
 staffing = {}
 staff_interval = 4
-nb_days = 12
+nb_days = 10
 nb_shifts = 3
 nb_fake_users = 10
 nb_days_rostering = 28
@@ -84,14 +84,14 @@ fake_user_suffix = 'fake_user_'
 for step in range(0, nb_shifts):
     start = 8 + staff_interval * step
     end = start + staff_interval
-    if end > 19: end = 18
+    if end >= 19: end = 18
     start_str = format_staff_time(start)
     end_str = format_staff_time(end)
 
     shift = shift_pattern_type(start=start, start_str=start_str, end=end, end_str=end_str)
     shift_patterns[step] = shift
     # for now , make staffing same # 5 is preprocess stage before embedding
-    staffing[step] = {0: 2, 1: 3, 2:2, 3: 1000, 4: 3, 5: 3}
+    staffing[step] = {0: 2, 1: 2, 2:2, 3: 1000, 4: 1, 5: 1}
 
 
 def staffing_to_csv(duplicate = True):
@@ -325,7 +325,7 @@ def load_real_data():
     for key, data_windows in day_data_windows.items():
         # index of data_window is same as shift_patterns
         for idx, data_window in enumerate(data_windows):
-
+            print(data_windows[0])
             df['arrival_time'] = df['case_key']
             df['arrival_time'] = df["arrival_time"].map(case_arrival_times)
             paras['jobs_in_shift'][key, idx] = df[(df.arrival_time >= data_window[0]) & (df.arrival_time < data_window[1])]

@@ -383,7 +383,7 @@ def process_queue(day_index, period, task_queue, queue_from_last_shift):
             if has_task_to_process == False:
                 break
             # find a worker
-            if ( task.job_id == 620 or task.job_id == 110) and task.client_idx == 1:
+            if ( task.job_id == 96) and task.client_idx == 0:
                 print('stage' , task.client_idx)
             #print(task)
             worker, task_start_time = stage_workers[task.client_idx].insert_into_idle(task.get_ready_time(), task.duration)
@@ -548,8 +548,8 @@ def assign_model(current_staffing, day_index_local=1):
                 # start process
                 process_queue(day, idx, task_queue, queue_from_last_shift)
 
-                if False:
-                    if (day == 0 and idx == 1 and rank == 0):
+                if True:
+                    if (day == 10 and idx == 2 and rank == 0):
                         print('idle are ')
                         print(queue_from_last_shift)
                         for t in queue_from_last_shift:
