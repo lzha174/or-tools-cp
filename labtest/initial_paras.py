@@ -84,14 +84,14 @@ fake_user_suffix = 'fake_user_'
 for step in range(0, nb_shifts):
     start = 8 + staff_interval * step
     end = start + staff_interval
-    if end >= 19: end = 18
+    if end >= 19: end = 17
     start_str = format_staff_time(start)
     end_str = format_staff_time(end)
 
     shift = shift_pattern_type(start=start, start_str=start_str, end=end, end_str=end_str)
     shift_patterns[step] = shift
     # for now , make staffing same # 5 is preprocess stage before embedding
-    staffing[step] = {0: 2, 1: 2, 2:2, 3: 1000, 4: 1, 5: 1}
+    staffing[step] = {0: 1, 1: 1, 2:1, 3: 1000, 4: 1, 5: 1}
 
 
 def staffing_to_csv(duplicate = True):

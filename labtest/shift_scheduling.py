@@ -34,7 +34,6 @@ def station_row_process(row, station_demand):
     stage = row.stage
     value = row.value
     #print('day = ', day, 'shift=', shift)
-    when r.
     station_demand[day, shift, stage] = value
 
 def worker_row_process(row, worker_available):
@@ -299,14 +298,10 @@ def model():
     # I can find nb of shifts worked each day, ? I can find total nb of shifts worked over a week for each staff, make distrbution more even?
     # i can add a soft prefrence cost constriant? if an employee likes a particular shift period, make the cost smaller
     objective = 'min_cost'
-    #objective = 'even_shift'
     if objective == 'min_cost':
         model.Minimize(
             sum(v * rosterings_paras[key[0]].cost[key[1], key[2]] for key, v in worker_is_working_shift_period.items()))
-    # objective 2: minimise difference between max and min total number of assigned shifts to workers
-    # get total of assigned shifts for each worker
-    if objective == 'even_shift':
-        model.Minimize(maxTotalShifts - minTotalShifts )
+
     solver = cp_model.CpSolver()
     solver.parameters.max_time_in_seconds = paras['max_serach_time_sec']
     status = solver.Solve(model)
