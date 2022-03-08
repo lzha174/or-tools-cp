@@ -183,9 +183,9 @@ def record_result(start_date=18):
     temp = stats_df[stats_df.case_stage_rank == 1].sort_values(["start"], ascending=(True))
     case_key = temp['case_key'].tolist()
 
-    for i in range(len(case_key) - 1):
-        print(case_key[i], temp[temp.case_key == case_key[i]].end.values[0], case_key[i+1],temp[temp.case_key == case_key[i + 1]].start.values[0])
-        assert( temp[temp.case_key == case_key[i]].end.values[0] <= temp[temp.case_key == case_key[i + 1]].start.values[0] )
+    #for i in range(len(case_key) - 1):
+        #print(case_key[i], temp[temp.case_key == case_key[i]].end.values[0], case_key[i+1],temp[temp.case_key == case_key[i + 1]].start.values[0])
+    #    assert( temp[temp.case_key == case_key[i]].end.values[0] <= temp[temp.case_key == case_key[i + 1]].start.values[0] )
 
     # the last stage is signout
 
@@ -352,6 +352,11 @@ def initialise_queue(queue_from_last_shift, rank):
             bisect.insort_right(task_queue, first_task)
     return task_queue
 
+def indexFromQueue(element, queue):
+    for i, ele in enumerate(queue):
+        if ele == element:
+            return i
+    return None
 
 def process_queue(day_index, period, task_queue, queue_from_last_shift):
     # the question is how to schedule jobs with priority......
@@ -393,21 +398,21 @@ def process_queue(day_index, period, task_queue, queue_from_last_shift):
             job_id = task.job_id
             if job_id == 1349 or job_id == 266:
                 print('im here')
-            if (task.job_id == 1349) and task.client_idx == 0:
+            if (task.job_id == 2221) and (task.client_idx == 4 or task.client_idx == 5):
                 print('stage', task.client_idx, task)
             # print(task)
-            worker_reschedule = stage_workers[task.client_idx].reschedule(task, task.duration)
-            max_task_assigned = 0
+            worker_reschedule = stage_workers[task.client_idx].reschedule(task, allJobs)
+            min_last_start = 1e9
             best_worker = None
             rescheduled_tasks = None
             new_available_time = None
             for key, value in worker_reschedule.items():
                 if len(value[0]) == 0 : continue
 
-                nb_assigned, all_new_tasks = key.reschedule(task, value)
+                last_start, all_new_tasks = key.reschedule(task, value)
 
-                if nb_assigned > max_task_assigned:
-                    max_task_assigned =  nb_assigned
+                if last_start < min_last_start:
+                    min_last_start =  last_start
                     best_worker = key
                     rescheduled_tasks = all_new_tasks
                     new_available_time = value[1]
@@ -418,8 +423,9 @@ def process_queue(day_index, period, task_queue, queue_from_last_shift):
                         #print('unschedued', t)
                         # remove the next task in the queue
                         current_task = allJobs[t.job_id].current_task()
-                        if current_task in task_queue:
-                            task_queue.remove(current_task)
+                        idxInQueue = indexFromQueue(current_task, task_queue)
+                        if idxInQueue is not None:
+                            del task_queue[idxInQueue]
                         bisect.insort_right(queue_from_last_shift, t)
                 if len(scheduled) > 0:
                     # resort the queue with updated ready time for next task
@@ -428,18 +434,19 @@ def process_queue(day_index, period, task_queue, queue_from_last_shift):
                         next_task =  allJobs[t.job_id].get_next_task()
                         #print('next t ask', next_task)
                         # rescheduled task, need to reinsert its next task with updated ready time
-                        if next_task in task_queue:
-                            task_queue.remove(next_task)
+                        if next_task is not None:
+                            idxInQueue = indexFromQueue(next_task, task_queue)
+                            if idxInQueue is not None:
+                                del task_queue[idxInQueue]
                             bisect.insort_right(task_queue, next_task )
-                        else:
-                            if next_task is not None:
-                                bisect.insort_right(task_queue, next_task )
                         #for i in task_queue:
                         #    print('in queue', i)
 
 
 
         else:
+            if (task.job_id == 2221) and task.client_idx == 3:
+                print('stage', task.client_idx, task)
             priority = task.priority
             if priority == paras[nine_hour_priority_idx_str]:
                 # allJobs.show_job(next_task.job_key)
@@ -559,7 +566,7 @@ def assign_model(current_staffing, day_index_local=1):
     for day, data_windows in day_data_windows.items():
         a = datetime.datetime.now()
         # if day < data_rolling_window_lower_bound: continue
-        if day > data_rolling_window_upper_bound: break
+        #if day > data_rolling_window_upper_bound: break
         job_today = 0
         paras['night_used_embeddings'] = 0
         paras['lunch_used_embeddings'] = 0

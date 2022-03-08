@@ -64,26 +64,25 @@ class WorkerClass:
             if include_task:
                 new_gantt.append(scheduled)
         self.task_gantt = new_gantt
-        final_avaliable_time = avaliabletime
-        print('start schedule at', format_time(final_avaliable_time))
+        task_start_time = avaliabletime
+        #print('start schedule at', format_time(task_start_time))
         nb_tasks_assigned = 0
         # sort all to-be-scheduled tasks in duration
 
         for t in all_new_tasks:
-            print('new task', t)
-            if final_avaliable_time in self.lunch_interval:
-                final_avaliable_time =  self.lunch_end_time
+            #print('new task', t)
+
+            if task_start_time + t.duration > self.end_time:
+                 break
             else:
+                task_start_time = max(task_start_time, t.ready_time)
+                if task_start_time in self.lunch_interval:
+                    task_start_time = self.lunch_end_time
+                task_start_time = task_start_time + t.duration
+                nb_tasks_assigned = nb_tasks_assigned + 1
+        #print(format_time(task_start_time), nb_tasks_assigned)
 
-                if final_avaliable_time + t.duration > self.end_time:
-                    break
-                else:
-                    final_avaliable_time = max(final_avaliable_time, t.ready_time)
-                    final_avaliable_time = final_avaliable_time + t.duration
-                    nb_tasks_assigned = nb_tasks_assigned + 1
-            print(format_time(final_avaliable_time), nb_tasks_assigned)
-
-        return nb_tasks_assigned, all_new_tasks
+        return task_start_time, all_new_tasks
 
     def fix_reschedule(self, allJobs, all_new_tasks, final_avaliable_time):
         unscheduled = []
@@ -111,20 +110,25 @@ class WorkerClass:
 
                 else:
                     allJobs.update_previous_task(rescheduled_task.job_id, task_start_time)
+                    self.update_gantt(rescheduled_task, rescheduled_task.duration, task_start_time)
                     #print('updated rescheduled', rescheduled_task)
                 rescheduled.append(rescheduled_task)
 
         return unscheduled, rescheduled
 
 
-    def find_not_start_tasks(self, task_ready_time):
+    def find_not_start_tasks(self, task_ready_time, allJobs):
         changble_tasks = []
         last_scheduled_finish_time = self.start_time
         for scheduled_task in self.task_gantt:
+            #print('task in gantt', scheduled_task[6])
             scheduled_start_time = scheduled_task[4]
             if scheduled_start_time >= task_ready_time:
                 changble_tasks.append(scheduled_task)
             else:
+                t = scheduled_task[6]
+                if allJobs[t.job_id].current_task_idx == len(allJobs[t.job_id].taskcollection):
+                    allJobs[t.job_id].job_done = True
                 if scheduled_start_time + scheduled_task[5] > last_scheduled_finish_time:
                     last_scheduled_finish_time =  scheduled_start_time + scheduled_task[5]
         return  changble_tasks, last_scheduled_finish_time
@@ -277,7 +281,7 @@ class WokrerCollection:
                 left = format_time(interval.left)
                 right = format_time(interval.right)
                 print(left, right)
-    def reschedule(self, task, duration):
+    def reschedule(self, task, allJobs):
         worker_reschedule = {}
         for worker in self.workers:
 
@@ -288,7 +292,7 @@ class WokrerCollection:
                 current_time = max(worker.start_time, task.ready_time)
                 #print(worker, 'current event time', format_time(current_time))
 
-                changable_tasks, last_scheduled_finish_time = worker.find_not_start_tasks(task.ready_time)
+                changable_tasks, last_scheduled_finish_time = worker.find_not_start_tasks(task.ready_time, allJobs)
                 #print('last scheduled finish time ', format_time(last_scheduled_finish_time))
                 sorted_tasks = sorted(changable_tasks, key=itemgetter(4))
                 sorted_tasks = [s[6] for s in sorted_tasks] + [task]
@@ -436,7 +440,7 @@ class JobClass:
     ranks = [0, 1]
 
     def __init__(self):
-
+        # when is job done? until last task passed the simulation time
         self.taskcollection = []
         self.current_task_idx = 0
         self.job_done = False
@@ -446,9 +450,10 @@ class JobClass:
         return self.taskcollection[self.current_task_idx]
 
     def update_previous_task(self, task_start_time):
-        self.taskcollection[self.current_task_idx - 1].set_start_time(task_start_time)
+        self.taskcollection[self.previous_task_idx].set_start_time(task_start_time)
         # update current task ready time
-        self.taskcollection[self.current_task_idx].ready_time = task_start_time + self.taskcollection[self.current_task_idx - 1].duration
+        if self.previous_task_idx != self.current_task_idx:
+            self.taskcollection[self.current_task_idx].ready_time = self.taskcollection[self.previous_task_idx].end_task_time
 
     def move_to_next_task(self, task_start_time):
         self.previous_task_idx = self.current_task_idx
@@ -478,7 +483,8 @@ class JobClass:
 
     def get_next_task(self):
         # return next task to do
-        if self.job_done: return None
+        if  self.job_done:
+            return None
         return self.taskcollection[self.current_task_idx]
 
 
