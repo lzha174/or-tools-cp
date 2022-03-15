@@ -1,7 +1,7 @@
 import pandas as pd
 
 from initial_paras import *
-
+#model lunch break propery for the heuristic model
 import random
 # in a more real world, jobs have priority, what does this mean?
 # this means if job a, b are both ready, a has priority 1, b has priority 2, we should take a
@@ -109,7 +109,8 @@ class WorkerClass:
 
         # how to make avalible time jump out of ounch time
         self.last_task_finish_time = task_start_time + duration
-        #print('last finish time', format_time(self.last_task_finish_time))
+        #print('last finish time', format_time(previous_avaliable_time))
+        #print(format_time(task_start_time))
 
         if self.stage != paras[batch_stage_idx_str] and self.stage != nigh_stage:
             # No task assigned yet, no idle interval
@@ -264,7 +265,7 @@ class TaskClass:
         self.priority = task.priority_idx
         self.first_task_ready_time = task.first_task_ready_time
         self.job_id = job_id
-        self.task_rank = task.task_rank
+        self.task_rank = 0
 
 
 
@@ -379,6 +380,31 @@ class JobCollection():
     def mark_job_task_finish(self, job_key, task_start_time):
         self.jobs[job_key].move_to_next_task(task_start_time)
         return self.jobs[job_key]
+
+    def next_task_each_stage(self, ends_time):
+        task_to_do = {} # key is stage, value is best task
+        # rank tasks in terms of a score for each stage
+        ranked_tasks_each_eage = {}
+        for i in paras[idx_to_stage_str].keys():
+            ranked_tasks_each_eage[i] = []
+
+        for job_key, job in self.jobs.items():
+            next_task = job.get_next_task()
+            if next_task is None: continue
+            task_stage = next_task.get_client_idx()
+            if task_stage != paras[batch_stage_idx_str]:
+                if task_stage in (0, 1, 2):
+                    # priorities one is more important
+                    # calculate a score for each task
+                    # score is based on some rules
+                    # before 12am, 2 hour task have a high priority
+                    # amoung 2 hour task, first-in task has high priority
+                    # after 12am , 9 hour task have a high priority
+                    # amount 9 hour tasks, first-in task has high priority
+                    
+
+
+
 
     def next_task_for_each_stage(self, ends_time):
 

@@ -1,6 +1,6 @@
 import copy
 
-from schedulingclasses import *
+from heuristic_scheduling_class import *
 
 task_type = collections.namedtuple('task',
                                    'case_key_idx client_idx priority_idx duration ready_time order first_task_ready_time')
@@ -326,14 +326,15 @@ def assign_for_shift(day_index=0, period=2):
                 # print(f'perform on this task for job {tasks.job_key}')
                 # print(tasks.task)
                 first_ready_time = tasks.task.get_first_task_ready_time()
-                worker = stage_workers[stage].next_avaliable_worker(tasks.task.get_ready_time(), tasks.task.duration)
+                worker, task_start_time = stage_workers[tasks.task.client_idx].insert_into_idle(tasks.task.get_ready_time(),
+                                                                                          tasks.task.duration)
+                #worker = stage_workers[stage].next_avaliable_worker(tasks.task.get_ready_time(), tasks.task.duration)
                 # print('next avaliable worker')
                 # print(worker)
                 if worker is not None:
                     find_a_worker = True
                     # assign this task to thie worker
-                    task_start_time = custom_max(worker.get_avaliable_time(), tasks.task.get_ready_time())
-                    worker.update_last_task_finish_time(tasks.task.get_ready_time(), tasks.task.duration)
+
                     # print('after assign')
                     # print(worker)
                     # mark this task finished for that job set the task interval
