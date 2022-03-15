@@ -35,9 +35,10 @@ def draw_gannt(x_pairs, stage = 0):
         color = randint(0, no_of_colors - 1)
         ax.broken_barh([j], (startY, 10), facecolors=colors[color])
         start = f'{j[0]}'
+        s = format_time(j[0])
         value = f'{j[1]}'
         # ax.text(x=j[0] -200 , y=startY, s=start)
-        ax.text(x=j[0] + j[1], y=startY, s=value)
+        ax.text(x=j[0] + j[1], y=startY, s=s)
         startY += 20
 
     #ax.set_title(f'Tasks at stage {stage} from {day_index}')
