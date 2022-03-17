@@ -91,7 +91,7 @@ for step in range(0, nb_shifts):
     shift = shift_pattern_type(start=start, start_str=start_str, end=end, end_str=end_str)
     shift_patterns[step] = shift
     # for now , make staffing same # 5 is preprocess stage before embedding
-    staffing[step] = {0: 2, 1: 3, 2:2, 3: 1000, 4: 2, 5: 2}
+    staffing[step] = {0: 1, 1: 1, 2:1, 3: 1000, 4: 1, 5: 1}
 
 
 def staffing_to_csv(duplicate = True):
@@ -242,7 +242,7 @@ def load_real_data():
     df['work_ready_timestamp'] = pd.to_datetime(df['work_ready_timestamp'], format='%Y-%m-%d %H:%M:%S')
     # https://www.kite.com/python/answers/how-to-find-the-number-of-seconds-between-two-datetime-objects-in-python
     past_date = pd.to_datetime('17/05/2021 00:00')
-    df['case_priority'].fillna(1, inplace=True)
+    df['case_priority'].fillna('2 Hours', inplace=True)
     df['duration'] = df['end_timestamp'] - df["start_timestamp"]
     df['duration_sec'] = df['duration'] / np.timedelta64(1, 's')
 
@@ -342,7 +342,8 @@ def load_real_data():
     clients = df['client'].unique()
     case_priority = df['case_priority'].unique()
     case_key = df['case_key'].unique()
-
+    t = df[df.case_priority == 1].case_key
+    print(t)
     # make a map
     name_to_idx_key = {name: idx for idx, name in enumerate(case_key)}
     idx_to_name_key = {idx: name for idx, name in enumerate(case_key)}
@@ -376,8 +377,9 @@ def load_real_data():
 
     print(f'embedding indx {paras[batch_stage_idx_str]}')
     print(f'9 hour indx {paras[nine_hour_priority_idx_str]}')
+    df['embedding_count'].fillna(0, inplace= True )
+    print(df.info())
 
-    print('total null is', df.isna().sum())
     f = df[df['embedding_count'].isna()].case_key.unique()
     print(f)
 
@@ -402,3 +404,41 @@ def custom_max(a,b):
         return python_max(a, b)
     else:
         return max(a,b)
+
+
+class Book:
+    def __init__(self, name, language):
+        self.name =name
+        self.language = language
+    def __str__(self):
+        return f'name {self.name} language {self.language}'
+
+def sortByName(elem):
+    return elem.name
+
+def key_combiner(*keyfuncs):
+  def helper(elem):
+    return [keyfunc(elem) for keyfunc in keyfuncs]
+  return helper
+
+def sortByFirstLanguage(firstLanguage):
+  def helper(elem):
+    return elem.language == firstLanguage  # True > False
+  return helper
+
+def sortByLanguages(possibleLanguages):
+  def helper(elem):
+    if elem.language in possibleLanguages:
+       return possibleLanguages.index(elem.language)
+  return helper
+
+bookList = [Book('today', 'English'), Book('tomorrow', 'Chinese')]
+firstLanguage = 'Chinese'
+possibleLanguages = ['Chinese', 'English']
+
+sortedBookList = sorted(bookList,
+                        key=key_combiner(sortByName,
+                                         sortByFirstLanguage(firstLanguage),
+                                         sortByLanguages(possibleLanguages)))
+for s in sortedBookList:
+    print(s)

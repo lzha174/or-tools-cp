@@ -14,7 +14,7 @@ import random
 
 # for each worker I want to know all the idle intervals so far
 class WorkerClass:
-    def __init__(self, idx, day, period, start_time, end_time, lunch_start_time, lunch_end_time, stage):
+    def __init__(self, idx, day, period, start_time, end_time, mid_day_time, lunch_start_time, lunch_end_time, stage):
         self.idx = idx
         self.day = day
         self.period = period
@@ -35,6 +35,9 @@ class WorkerClass:
         self.total_tasks_assgined = 0
         self.interval_modify = None
         self.stage =  stage
+        self.breaks = []
+        self.finished_shift = False
+        self.mid_day = mid_day_time
         # I want to add a maximum nb of tasks you can do for each wokrer per hour
         if stage != paras[batch_stage_idx_str] and stage != nigh_stage:
 
@@ -42,6 +45,7 @@ class WorkerClass:
             if lunch_start_time >= start_time and lunch_end_time <= end_time:
                 self.idle_intervals.append(pd.Interval(left = start_time, right = lunch_start_time, closed = 'left'))
                 self.last_task_finish_time = lunch_end_time
+                self.breaks.append(pd.Interval(left = lunch_start_time, right = lunch_end_time, closed = 'left'))
 
 
 
@@ -100,30 +104,38 @@ class WorkerClass:
         for interval in self.idle_intervals:
             print(format_time(interval.left), format_time(interval.right))
 
-    def update_last_task_finish_time(self, task_start_time, duration):
-        # total busy time is used to calculate utilisation
-        previous_avaliable_time = copy.copy(self.last_task_finish_time)
+    def find_start_time_with_breaks(self, task_start_time, duration):
+        task_inteval = pd.Interval(left = task_start_time, right = task_start_time + duration)
+        for w_break in self.breaks:
+            if task_inteval.overlaps(w_break):
+                # cant do this task in this shift
+                if  w_break.right + duration >= self.end_time:
+                    return  None
+                task_inteval = pd.Interval(left=w_break.right, right= w_break.right + duration)
+            else:
+                return task_inteval.left
+        # if we cant find any time to start this task, this worker cant do any work any more in this shift?
+        if task_inteval.right < self.end_time:
+            return task_inteval.left
+        return None
 
-        # notebook change to python_max
-        # if next avlaible time is 12:50, how to make it pass lunch time??
+    def free_to_next_task(self, task):
 
-        # how to make avalible time jump out of ounch time
-        self.last_task_finish_time = task_start_time + duration
-        #print('last finish time', format_time(previous_avaliable_time))
-        #print(format_time(task_start_time))
+        task_start_time = custom_max(self.last_task_finish_time, task.ready_time)
+        adjusted_start_time = self.find_start_time_with_breaks(task_start_time, task.duration)
+        if adjusted_start_time is None:
+            return False, None
 
-        if self.stage != paras[batch_stage_idx_str] and self.stage != nigh_stage:
-            # No task assigned yet, no idle interval
-            if len(self.idle_intervals) == 0:
-                self.total_tasks_assgined = self.total_tasks_assgined + 1
-                # have an idle interval between previous avaliable time and task start time
-            assert (task_start_time >= previous_avaliable_time)
-            if (task_start_time > previous_avaliable_time):
-                self.idle_intervals.append(pd.Interval(left = previous_avaliable_time, right = task_start_time, closed='left'))
+        return True, adjusted_start_time
+
+    def update_free_time(self, start_time, task):
+
+        self.last_task_finish_time = start_time + task.duration
+        self.update_gantt(start_time, task)
 
 
-    def update_gantt(self, duration, task_start_time):
-        task_gantt = [self.day, self.period, self.stage, self.idx, task_start_time, duration]
+    def update_gantt(self, task_start_time, task):
+        task_gantt = [self.day, self.period, self.stage, self.idx, task_start_time, task.duration]
         self.task_gantt.append(task_gantt)
 
     def get_avaliable_time(self):
@@ -149,8 +161,8 @@ class WorkerClass:
 
 
 class WokrerCollection:
-    def __init__(self, day, period, stage, nb_worker, start_time, end_time, lunch_start_time, lunch_end_time):
-        self.workers = [WorkerClass(i, day, period, start_time, end_time, lunch_start_time, lunch_end_time, stage) for i
+    def __init__(self, day, period, stage, nb_worker, start_time, end_time, mid_day_time, lunch_start_time, lunch_end_time):
+        self.workers = [WorkerClass(i, day, period, start_time, end_time, mid_day_time, lunch_start_time, lunch_end_time, stage) for i
                         in range(nb_worker)]
         self.stage = stage
         self.start = format_time(start_time)
@@ -194,6 +206,18 @@ class WokrerCollection:
                 left = format_time(interval.left)
                 right = format_time(interval.right)
                 print(left, right)
+
+    def find_earliest_free(self):
+        freeTimes = []
+        for idx, worker in enumerate(self.workers):
+            freeTimes.append(worker.last_task_finish_time)
+        # get the minimum value in the list
+        min_value = min(freeTimes)
+
+        # return the index of minimum value
+        min_index = freeTimes.index(min_value)
+        # how to handle end of shift?
+        return self.workers[min_index]
 
     def insert_into_idle(self, ready_time, duration):
         # find the worker with earliest insertion
@@ -273,7 +297,7 @@ class TaskClass:
         stage = self.task.client_idx
         client = paras[idx_to_name_client_str][stage]
         return (
-            f'job {self.job_id} task {client} start {format_time(self.start_task_time)} end {format_time(self.end_task_time)} rank ={self.task_rank} duration {self.duration} ready {format_time(self.ready_time)}')
+            f'job {self.job_id} task {client} start {format_time(self.start_task_time)} end {format_time(self.end_task_time)} priority ={self.priority} duration {self.duration} ready {format_time(self.ready_time)}')
 
     def __lt__(self, other):
         # for the same stage, queue high rank job to schedule first, rank 0 is highest
@@ -334,6 +358,7 @@ class JobClass:
         self.taskcollection = []
         self.current_task_idx = 0
         self.job_done = False
+        self.embedding_count = 0
 
     def move_to_next_task(self, task_start_time):
 
@@ -346,22 +371,24 @@ class JobClass:
         else:
             self.job_done = True
 
-    def set_job(self, key, value):
+    def set_job(self, key, embedding, value):
         self.job_id = key
+        self.embedding_count = embedding
         for v in value:
             self.taskcollection.append(TaskClass(v, key))
 
     def __str__(self):
-        output = [f'{self.job_id}']
+        output = [f'{self.job_id} embedding {self.embedding_count}']
         for task in self.taskcollection:
             output.append(task.__str__())
+        output.append(f'current {self.taskcollection[self.current_task_idx].__str__()}')
         out = ('\n').join(o for o in output)
         return out
 
     def get_job_id(self):
         return self.job_id
 
-    def get_next_task(self):
+    def current_task(self):
         # return next task to do
         if self.job_done: return None
         return self.taskcollection[self.current_task_idx]
@@ -370,6 +397,9 @@ class JobClass:
 class JobCollection():
     def __init__(self):
         self.jobs = {}
+    
+    def __getitem__(self, item):
+        return self.jobs[item]
 
     def add_job(self, job):
         self.jobs[job.get_job_id()] = job
@@ -382,29 +412,7 @@ class JobCollection():
         return self.jobs[job_key]
 
     def next_task_each_stage(self, ends_time):
-        task_to_do = {} # key is stage, value is best task
-        # rank tasks in terms of a score for each stage
-        ranked_tasks_each_eage = {}
-        for i in paras[idx_to_stage_str].keys():
-            ranked_tasks_each_eage[i] = []
-
-        for job_key, job in self.jobs.items():
-            next_task = job.get_next_task()
-            if next_task is None: continue
-            task_stage = next_task.get_client_idx()
-            if task_stage != paras[batch_stage_idx_str]:
-                if task_stage in (0, 1, 2):
-                    # priorities one is more important
-                    # calculate a score for each task
-                    # score is based on some rules
-                    # before 12am, 2 hour task have a high priority
-                    # amoung 2 hour task, first-in task has high priority
-                    # after 12am , 9 hour task have a high priority
-                    # amount 9 hour tasks, first-in task has high priority
-                    
-
-
-
+        pass
 
     def next_task_for_each_stage(self, ends_time):
 
@@ -412,7 +420,7 @@ class JobCollection():
         task_to_do = {}
 
         for job_key, job in self.jobs.items():
-            next_task = job.get_next_task()
+            next_task = job.current_task()
             if next_task is None: continue
             task_stage = next_task.get_client_idx()
             if task_stage != paras[batch_stage_idx_str]:
@@ -436,7 +444,7 @@ class JobCollection():
         # first find all jobs whose next ask is at this stage
         if stage != paras[batch_stage_idx_str] and stage != nigh_stage:
             for job_key, job in self.jobs.items():
-                next_task = job.get_next_task()
+                next_task = job.current_task()
                 if next_task.client_idx == stage:
                     # print(next_task)
                     if task_to_do is not None:
@@ -450,7 +458,7 @@ class JobCollection():
             # we are trying to find batched
             task_to_do = []
             for job_key, job in self.jobs.items():
-                next_task = job.get_next_task()
+                next_task = job.current_task()
                 if next_task.client_idx == stage:
                     task_to_do.append(next_task)
             # print('to do embedding', len(task_to_do))
