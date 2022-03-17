@@ -447,6 +447,7 @@ class JobClass:
         self.previous_task_idx = None
 
     def current_task(self):
+        if self.job_done: return None
         return self.taskcollection[self.current_task_idx]
 
     def update_previous_task(self, task_start_time):

@@ -243,20 +243,6 @@ def record_result(start_date=18):
     return total_duration_df['optimised_duration'].mean(), reach_target
 
 
-# write_to_file(logstr)
-
-
-# go through the job list, find the next task to assign for each stage ( the one with earliest arrival time)
-# remove this task from the list, record some stats.....
-#  this is beyond my understanding at the moment
-#  for a task, find the earliest to be freed worker at each stage.
-#  change the avaliable time for this wokrer after finish this task, move on
-# just go through the first task in a job , put them into stage bucket in a sorted order?
-# given i have a job dict, what to do?
-
-# for each day/period  I need to define stage workers, but batch worker only define once for each day?
-# nah I just need to remove used capacity
-# note:for now igonre this
 
 stage_workers = {}
 
@@ -315,13 +301,16 @@ def key_combiner(*keyfuncs):
 def sortByReadyTime(elem):
     return elem.ready_time
 
+def sortByArriveTime(elem):
+    return elem.first_task_ready_time
+
 # we sort in asec order, meaning [0, 4] is before [1,2]
 # so before mid day, a 2 hour task give a value of 0 in terms of prority, which will be taken first if possible
 def sortByPrority(worker):
   def helper(elem):
     # check how many batching left to do
     job = allJobs[elem.job_id]
-    if job.embedding_count > 0:
+    if job.batch_count > 0:
         # if pass mid day, 9 hour has higier priority
         if worker.last_task_finish_time > worker.mid_day:
             if elem.priority != paras[two_hour_priority_idx_str]:
@@ -335,42 +324,11 @@ def sortByPrority(worker):
                 return 0
             else:
                 return 1
+    else:
+        return 1
   return helper
 
 
-def pull_batch_tasks(current_job_pool, worker):
-    # find the earliest job this worker can do
-    worker_free_time = worker.last_task_finish_time
-
-    # get the most important task
-    candiate_tasks_in_the_queue = []
-    next_task_to_arrive = None
-    for job in current_job_pool:
-        current_task = job.current_task()
-        if current_task.client_idx == paras[batch_stage_idx_str]:
-
-            # this is a batch task, check the worker
-            worker_stage = worker.stage
-            task_priority = current_task.priority
-
-
-
-            # 2 hour priority work can go to both mid day and night batch
-            # 9 hour canot go to midday worker batch
-            if task_priority == paras[two_hour_priority_idx_str]:
-
-
-
-                if worker_stage == paras[batch_stage_idx_str]:
-                    if current_task.ready_time < worker_free_time:
-                        candiate_tasks_in_the_queue.append(current_task)
-                    else:
-                        # todo: this task passed midday batch, we really should remove this job from the pool
-                        pass
-                else: # a night batch worker try to find work
-                    # a two hour task should try go to 2 hour batch
-
-                    # a night batch task, we cant process this task
 
 def pull_task(current_job_pool, stage, worker):
     # find the earliest job this worker can do
@@ -396,19 +354,61 @@ def pull_task(current_job_pool, stage, worker):
 
         sortedTasks = sorted(candiate_tasks_in_the_queue,
                                 key=key_combiner(sortByPrority(worker),
-                                                 sortByReadyTime))
+                                                 sortByReadyTime, sortByArriveTime))
 
-        for s in sortedTasks:
-            print(s)
-        return s[0]
+        #for s in sortedTasks:
+        #    print(s)
+        return sortedTasks[0]
     else:
         return next_task_to_arrive
     # sort the task in ready_time
 
 
+def put_task_to_batch(task, duration, batch_bin):
+    w = stage_workers[batch_bin].get_idle_batch_worker()
+    if w is not None:
+        w.fill_task()
+        # update task
+        job_id = task.job_id
+        allJobs[job_id].reduce_batch_count()
+        allJobs[job_id].move_to_next_task(task_start_time = w.start_time, duration = w.duration)
+        return True
+    return False
+
+def check_is_batch(current_job_pool, wait_pool, next_task):
+    if next_task.client_idx == paras[batch_stage_idx_str]:
+        priority = next_task.priority
+        if priority == paras[two_hour_priority_idx_str]:
+
+            if put_task_to_batch(next_task, paras['duration_2'][2], paras[mid_day_batch_str]):
+                # mark this is ok
+
+                return
+            elif put_task_to_batch(next_task, paras['duration_2'][9], paras[night_batch_str]):
+                # mark this is ok
+
+                return
+            else:
+                # queue this task for next day batch
+                job_id = next_task.job_id
+                current_job_pool.remove(allJobs[job_id])
+                wait_pool.append(allJobs[job_id])
+        else:
+            # 9 hour priority
+            print(priority)
+            if put_task_to_batch(next_task, paras['duration_2'][9], paras[night_batch_str]):
+                # mark this is ok
+
+                return
+            else:
+                # queue this task for next day
+                job_id = next_task.job_id
+                current_job_pool.remove(allJobs[job_id])
+                wait_pool.append(allJobs[job_id])
 
 
 def pull_job(current_job_pool):
+    wait_pool = []
     # for each stage, find the worker that become avalible earliest
     # we have a pool of jobs for this shift, if a job cant be processed, remove this job from the pool and put it into waiting list for the next shift
     print('current pool size', len(current_job_pool))
@@ -418,155 +418,55 @@ def pull_job(current_job_pool):
         # if no worker can do this task in the shift, remove this job to the waiting pool for next shift
     # for each stage worker, check the pool, if there is a task do it. if a task cant be done by any worker, remove the job from the pool
     # now lets try to pull some task
-    for stage, group in stage_workers.items():
-        for w in group.workers:
-            if stage != paras[batch_stage_idx_str] and stage != nigh_stage:
-                task_to_do = pull_task(current_job_pool, stage, w)
-                print('next task is ', task_to_do)
-                # now check if this worker can do this task
-                eligible, start_time = w.free_to_next_task(task_to_do)
-                w.update_free_time(start_time = start_time, task = task_to_do)
-                print(eligible, format_time(start_time))
-                print(w)
-                # update job next task ready time
-                job_id = task_to_do.job_id
-                allJobs[job_id].move_to_next_task(start_time)
-                print(allJobs[job_id])
-                next_task = allJobs[job_id].current_task()
-                if next_task.client_idx == paras[batch_stage_idx_str]:
-                    # next task is a batch task, call batch worker
-                    priority = next_task.priority
-                    ready = next_task.ready_time
-                    # a 2 hour task
-                    if priority == paras[batch_stage_idx_str]:
-                        # first see if we can get a mid day batch woker
-                        if ready < stage_workers[paras[batch_stage_idx_str]].start_time:
+    while len(current_job_pool)> 0:
+        for stage, group in stage_workers.items():
+            for w in group.workers:
+                if stage != paras[batch_stage_idx_str] and stage != nigh_stage:
+                    task_to_do = pull_task(current_job_pool, stage, w)
+                    print('next task is ', task_to_do)
 
+                    if task_to_do is None:
+                        break
+                    job_id = task_to_do.job_id
+                    if job_id == 1147:
+                        print('g')
+                    # now check if this worker can do this task
+                    eligible, start_time, end_time = w.free_to_next_task(task_to_do)
+                    if eligible:
+                        w.update_free_time(start_time = start_time, end_time=end_time, task = task_to_do)
+                        #print(eligible, format_time(start_time))
+                        #print(w)
+                        # update job next task ready time
 
+                        allJobs[job_id].move_to_next_task(start_time)
+                        #print(allJobs[job_id])
 
-
-
-
-
-
-def assign_for_shift(day_index=0, period=2):
-    # now i have workers for each stage, how do i assign them?
-    # keep look at the first unfinished task in each job
-    # find the smallest arrival task and assign to the next avaliable worker until it is impossible to assign
-    ends_time = int(shift_patterns[period].end * seconds_per_hour + day_index * day_in_seconds)
-    have_task_to_do = True
-    # when to stop assigning? 1 no more tasks, two no worker for that stage
-    while have_task_to_do:
-        task_to_do = allJobs.next_task_for_each_stage(ends_time)
-        if len(task_to_do) > 0:
-            have_task_to_do = True
-        else:
-            have_task_to_do = False
-        find_a_worker = False
-        for stage, tasks in task_to_do.items():
-
-            if stage != paras[batch_stage_idx_str]:
-                # assign this task to next avaliable worker and mark this task finished
-                # print('ready time,', tasks.task.get_ready_time())
-                # print(f'perform on this task for job {tasks.job_key}')
-                # print(tasks.task)
-                first_ready_time = tasks.task.get_first_task_ready_time()
-                worker, task_start_time = stage_workers[tasks.task.client_idx].insert_into_idle(tasks.task.get_ready_time(),
-                                                                                          tasks.task.duration)
-                #worker = stage_workers[stage].next_avaliable_worker(tasks.task.get_ready_time(), tasks.task.duration)
-                # print('next avaliable worker')
-                # print(worker)
-                if worker is not None:
-                    find_a_worker = True
-                    # assign this task to thie worker
-
-                    # print('after assign')
-                    # print(worker)
-                    # mark this task finished for that job set the task interval
-                    allJobs.mark_job_task_finish(tasks.job_key, task_start_time)
-                    # allJobs.show_job(tasks.job_key)
-            else:
-                for next_task in tasks:
-                    # get priority
-                    # print(f'perform on this task for job {next_task.job_key}')
-                    # print(next_task.task)
-                    priority = next_task.task.priority
-                    if priority == paras[nine_hour_priority_idx_str]:
-                        # allJobs.show_job(next_task.job_key)
-                        # put this into night batch
-                        # print(stage_workers[nigh_stage])
-                        duration = paras['duration_2'][9]
-                        worker = stage_workers[nigh_stage].next_avaliable_worker(next_task.task.get_ready_time(),
-                                                                                 duration)
-                        ready_time = format_time(next_task.task.get_ready_time())
-                        # print(worker, ready_time, next_task.task.duration)
-
-                        if worker is not None:
-                            paras['night_used_embeddings'] = paras['night_used_embeddings'] + 1
-                        # print('next avaliable worker')
-                        # print(worker)
-                    else:
-                        duration = paras['duration_2'][2]
-                        # 2 hour prioity, put it into lunch batch if possible
-                        # get next avalaible worker from two hour batch
-                        worker = stage_workers[stage].next_avaliable_worker(next_task.task.get_ready_time(),
-                                                                            duration)
-
-                        if worker is None:
-                            # passed lunch batch
-                            duration = paras['duration_2'][9]
-                            worker = stage_workers[nigh_stage].next_avaliable_worker(next_task.task.get_ready_time(),
-                                                                                     duration)
-
-                            if worker is not None:
-                                paras['night_used_embeddings'] = paras['night_used_embeddings'] + 1
+                        if allJobs[job_id].job_done:
+                            current_job_pool.remove(allJobs[job_id])
+                            #print(f'remove {job_id}')
                         else:
-                            paras['lunch_used_embeddings'] = paras['lunch_used_embeddings'] + 1
+                            next_task = allJobs[job_id].current_task()
 
-                    if worker is not None:
-                        find_a_worker = True
-                        # print(next_task.task)
-                        task_start_time = custom_max(worker.get_avaliable_time(), next_task.task.get_ready_time())
-                        # need to update embedding duration based on lunch or night
-                        next_task.task.duration = duration
-                        worker.update_last_task_finish_time(next_task.task.get_ready_time(), duration)
-                        allJobs.mark_job_task_finish(next_task.job_key, task_start_time)
-                    # allJobs.show_job(next_task.job_key)
-            # no worker is avaliable for any current task to do, a worker is avliable if next avaliable time is before shift ending time
-        if find_a_worker == False:
-            have_task_to_do = False
+                            check_is_batch(current_job_pool = current_job_pool, wait_pool = wait_pool, next_task=next_task)
+                    else:
+                        # if this task is beyond shift tifirst_task_ready_timeme, ?
+                        first_free_w = group.earliest_free_worker()
+                        eligible, start_time, end_time = first_free_w.free_to_next_task(task_to_do)
+                        if not eligible:
+                            if job_id == 110:
+                                print('f')
+                            #print('trying to remove', job_id)
+                            current_job_pool.remove(allJobs[job_id])
+                            wait_pool.append(allJobs[job_id])
 
-    # scheduling for this period is finsihed, get utlisation
-    if day_index >= 1 and day_index <= 3:
+            # sort workers by free time
+            group.sort_workers()
+    return wait_pool
 
-        if period == max_shift_key:
-            utilisation = [day_index, period]
-            stage_name = 'lunch_embedding'
-            average_utilisation = paras['lunch_used_embeddings'] / 1000.0
-            percentage = "{:.0%}".format(average_utilisation)
-            utilisation.append(stage_name)
-            utilisation.append(percentage)
-            paras['utilisation'].append(utilisation)
 
-            utilisation = [day_index, period]
-            stage_name = 'night_embedding'
-            average_utilisation = paras['night_used_embeddings'] / 1000.0
-            percentage = "{:.0%}".format(average_utilisation)
-            utilisation.append(stage_name)
-            utilisation.append(percentage)
-            paras['utilisation'].append(utilisation)
 
-        for key in stage_workers:
-            utilisation = [day_index, period]
-            if key == paras[batch_stage_idx_str] or key == nigh_stage: continue
 
-            stage_name = paras[idx_to_name_client_str][key]
 
-            average_utilisation = stage_workers[key].average_utilisation()
-            percentage = "{:.0%}".format(average_utilisation)
-            utilisation.append(stage_name)
-            utilisation.append(percentage)
-            paras['utilisation'].append(utilisation)
 
 def define_batch_workers(day_index):
     # for each day we have two batches slots
@@ -574,33 +474,30 @@ def define_batch_workers(day_index):
 
     period = 0
     capacity = paras['staffing'][period]
-    stage = paras[batch_stage_idx_str]
+    stage = paras[mid_day_batch_str]
     starts_time = paras['start_emdbedding'][2] + day_index * day_in_seconds
     ends_time = starts_time + paras['duration_2'][2]
     mid_day_time = 12 * seconds_per_hour + day * day_in_seconds
     lunch_start_time = 0
     lunch_end_time = 0
-    paras[workers_str][day_index, period, stage] = WokrerCollection(day_index, period, stage,
+    paras[workers_str][day_index, period, stage] = BatchCollection(day_index, period, stage,
                                                                         capacity[stage],
                                                                         starts_time, ends_time, mid_day_time,
                                                                         lunch_start_time,
                                                                         lunch_end_time)
 
-    stage_workers[stage] = WokrerCollection(day_index, period, stage, capacity[stage],
-                                                                        starts_time, ends_time, mid_day_time,
-                                                                        lunch_start_time,
-                                                                        lunch_end_time)  # print(stage_workers[stage])
+    stage_workers[stage] = paras[workers_str][day_index, period, stage]
 
-
+    stage = paras[night_batch_str]
     starts_time = paras['start_emdbedding'][9] + day_index * day_in_seconds
     ends_time = starts_time + paras['duration_2'][9]
 
-    paras[workers_str][day_index, period, nigh_stage] = WokrerCollection(day_index, period, nigh_stage,
-                                                                         capacity[stage],
+    paras[workers_str][day_index, period, stage] = BatchCollection(day_index, period, stage,
+                                                                         capacity[paras[batch_stage_idx_str]],
                                                                          starts_time, ends_time, mid_day_time,
                                                                          lunch_start_time, lunch_end_time)
 
-    stage_workers[nigh_stage] = paras[workers_str][day_index, period, nigh_stage]  # print(stage_workers[stage])
+    stage_workers[stage] = paras[workers_str][day_index, period, stage]  # print(stage_workers[stage])
 
 
 # now try to assign jobs to workers at each stage
@@ -615,7 +512,7 @@ def assign_model(current_staffing, day_index_local=1):
 
     paras[workers_str] = {}  # key day, period, stage, value is a collection of workers for that shift
     current_job_pool = []
-    wait_list = []
+    wait_pool =[]
 
     global job_data
     for day, data_windows in day_data_windows.items():
@@ -635,12 +532,12 @@ def assign_model(current_staffing, day_index_local=1):
 
             # print('total jobs {} for day {} period {} is {}'.format(data_window, day, idx, len(job_data)))
             # if (len(job_data) == 0): continue
+            current_job_pool.clear()
+            current_job_pool = wait_pool
             define_jobs(current_job_pool)
             define_workers(day, idx)
-            pull_job(current_job_pool)
-            return
+            wait_pool = pull_job(current_job_pool)
             # get_break_stats()
-
             # print('todao job is ', job_today)
         # print('night used', paras['night_used_embeddings'])
         # print('lunch used', paras['lunch_used_embeddings'])
@@ -651,88 +548,10 @@ def assign_model(current_staffing, day_index_local=1):
 
 # assign_model(staffing)
 
-# i want to define a simple local search for a day's shift? fix all other day's shift
-def shift_local_search(day=1):
-    paras['result'] = []
-    paras['utilisation'] = []
-    paras['staffing'] = None
-    nb_staff_to_add = 5
-
-    logstr = []
-
-    current_average, reach_target = assign_model(staffing, day)
-    print(f'current average {current_average}')
-    logstr.append(f'current average before adding staff for day {day} is {current_average}')
-    for i in range(nb_staff_to_add):
-        outstr = f'add staff {i}\n'
-        logstr.append(outstr)
-        # say i want to add one more staff, i want to know add to which stage
-        stage_to_search = [0, 1, 2, 4, 5]
-        # improvement = {}
-
-        # add 1 worker to the best shift, in each shift , find the best stage
-        max_improvment_shift = 0
-        best_shift = None
-        best_average_shift = None
-        best_shift_stage = None
-        reach_target = False
-        for shift_period in range(max_shift_key + 1):
-            logstr.append(f'go through shift {shift_period}\n')
-
-            max_improve_all_stages_this_shift = -1e15
-            best_average_this_shift = None
-            best_stage_this_shift = None
-
-            # given a shift period, find the best stage to add a worker
-
-            for s in stage_to_search:
-                temp_staffing = copy.deepcopy(staffing)
-
-                temp_staffing[shift_period][s] = temp_staffing[shift_period][s] + 1
-                # print('current staffing', temp_staffing)
-                new_average, reach_target = assign_model(temp_staffing, day)
-                # when 95% are finished within 2 days, we are done
-                improvement = current_average - new_average
-                to_seconds = improvement.total_seconds()
-                print('to seconds', to_seconds)
-                if to_seconds > 0 and to_seconds > max_improve_all_stages_this_shift:
-                    max_improve_all_stages_this_shift = to_seconds
-                    best_stage_this_shift = s
-                    best_average_this_shift = new_average
-                    # if we have reached performance targert, no need to continue to add?
-                    if reach_target:
-                        break
-            # after going through all stages of a shift period, if the best improvement is better than current best,
-            # mark this shift to be the best shfit to add 1 more staff
-            if max_improve_all_stages_this_shift > max_improvment_shift:
-                max_improvment_shift = max_improve_all_stages_this_shift
-                best_shift = shift_period
-                best_average_shift = best_average_this_shift
-                best_shift_stage = best_stage_this_shift
-                if reach_target:
-                    staffing[best_shift][best_shift_stage] = staffing[best_shift][best_shift_stage] + 1
-                    return
-
-
-        if best_shift is not None:
-            logstr.append(f'best shift is {best_shift} best stage is {best_shift_stage}\n')
-            logstr.append(f'best improvment is {best_average_shift}\n')
-            staffing[best_shift][best_shift_stage] = staffing[best_shift][best_shift_stage] + 1
-            current_average = best_average_shift
-            print(current_average)
-        else:
-            return
-
-        for shift_period in range(max_shift_key + 1):
-            for s in stage_to_search:
-                logstr.append(
-                    f'period {shift_period} stage {s} staff are {staffing[shift_period][s]}\n')
-
-    write_to_file('log.txt', logstr)
 
 a = datetime.datetime.now()
 # repeat_local_search()
-assign_model(staffing, 1)
+assign_model(staffing, 0)
 #shift_local_search(1)
 #staffing_to_csv(True)
 b = datetime.datetime.now()

@@ -17,6 +17,10 @@ name_to_idx_priority_str = 'name_to_idx_priority'
 idx_to_name_priority_str = 'idx_to_name_priority'
 
 batch_stage_idx_str = 'batch_stage_idx'
+mid_day_batch_str = 'batch_mid_day'
+night_batch_str = 'night_batch'
+batch_bin_str = 'batch_bin'
+
 nine_hour_priority_idx_str = 'nine_hour_priority_idx'
 two_hour_priority_idx_str = 'two_hour_priority_idx'
 
@@ -91,7 +95,7 @@ for step in range(0, nb_shifts):
     shift = shift_pattern_type(start=start, start_str=start_str, end=end, end_str=end_str)
     shift_patterns[step] = shift
     # for now , make staffing same # 5 is preprocess stage before embedding
-    staffing[step] = {0: 1, 1: 1, 2:1, 3: 1000, 4: 1, 5: 1}
+    staffing[step] = {0: 2, 1: 2, 2:2, 3: 1000, 4: 2, 5: 2}
 
 
 def staffing_to_csv(duplicate = True):
@@ -364,6 +368,10 @@ def load_real_data():
     paras[idx_to_name_priority_str] = idx_to_name_priority
 
     paras[batch_stage_idx_str] = name_to_idx_client['Embedding']
+    paras[mid_day_batch_str] = paras[batch_stage_idx_str]
+    paras[night_batch_str] = nigh_stage
+    paras[batch_bin_str] = [paras[mid_day_batch_str], paras[night_batch_str]]
+
     paras[nine_hour_priority_idx_str] = name_to_idx_priority['9 Hours']
     paras[two_hour_priority_idx_str] = name_to_idx_priority['2 Hours']
     # print(f'name to idx key {paras[name_to_idx_key_str] }')

@@ -38,14 +38,10 @@ class WorkerClass:
         self.breaks = []
         self.finished_shift = False
         self.mid_day = mid_day_time
-        # I want to add a maximum nb of tasks you can do for each wokrer per hour
-        if stage != paras[batch_stage_idx_str] and stage != nigh_stage:
-
             # insert the lunch as a fake task, this may create idle interval before  lunch, marke the last finish task as lunch finish task
-            if lunch_start_time >= start_time and lunch_end_time <= end_time:
-                self.idle_intervals.append(pd.Interval(left = start_time, right = lunch_start_time, closed = 'left'))
-                self.last_task_finish_time = lunch_end_time
-                self.breaks.append(pd.Interval(left = lunch_start_time, right = lunch_end_time, closed = 'left'))
+        if lunch_start_time >= start_time and lunch_end_time <= end_time:
+
+            self.breaks.append(pd.Interval(left = lunch_start_time, right = lunch_end_time, closed = 'left'))
 
 
 
@@ -90,19 +86,7 @@ class WorkerClass:
             #print(format_time(self.last_task_finish_time), format_time(task_ready_time))
             return custom_max(self.last_task_finish_time, task_ready_time), True
 
-    def modify_idle_interval(self):
-        #self.show_idle_intervals()
-        del self.idle_intervals[self.interval_modify.index]
-        insert_idx = self.interval_modify.index
-        if self.interval_modify.left_interval is not None:
-            self.idle_intervals.insert(insert_idx, self.interval_modify.left_interval)
-            insert_idx = insert_idx + 1
-        if self.interval_modify.right_interval is not None:
-            self.idle_intervals.insert(insert_idx, self.interval_modify.right_interval)
 
-    def show_idle_intervals(self):
-        for interval in self.idle_intervals:
-            print(format_time(interval.left), format_time(interval.right))
 
     def find_start_time_with_breaks(self, task_start_time, duration):
         task_inteval = pd.Interval(left = task_start_time, right = task_start_time + duration)
@@ -120,18 +104,21 @@ class WorkerClass:
         return None
 
     def free_to_next_task(self, task):
-
+        if task.ready_time >= self.end_time:
+            return False, None, None
         task_start_time = custom_max(self.last_task_finish_time, task.ready_time)
         adjusted_start_time = self.find_start_time_with_breaks(task_start_time, task.duration)
+
         if adjusted_start_time is None:
-            return False, None
+            return False, None, None
+        adjusted_end_time = adjusted_start_time + task.duration
+        return True, adjusted_start_time, adjusted_end_time
 
-        return True, adjusted_start_time
+    def update_free_time(self, start_time, end_time, task):
 
-    def update_free_time(self, start_time, task):
-
-        self.last_task_finish_time = start_time + task.duration
+        self.last_task_finish_time = end_time
         self.update_gantt(start_time, task)
+
 
 
     def update_gantt(self, task_start_time, task):
@@ -151,13 +138,23 @@ class WorkerClass:
     def get_utilisation(self):
         return self.total_busy_time / (self.end_time - self.start_time)
 
-    def isLunchTime(self, task_start_time, task_finish_time):
-        if self.stage == paras[batch_stage_idx_str]: return
-        task_inveral = pd.Interval(task_start_time, task_finish_time)
-        isLunch = self.lunch_interval.overlaps(task_inveral)
-        if isLunch:
-            # make the avaliable time pass lunch
-            self.last_task_finish_time = self.lunch_end_time
+    def __lt__(self, other):
+        return self.last_task_finish_time < other.last_task_finish_time
+
+class BatcherWorkerClass (WorkerClass):
+    def __init__(self, idx, day, period, start_time, end_time, mid_day_time, lunch_start_time, lunch_end_time, stage):
+        WorkerClass.__init__(self, idx, day, period, start_time, end_time, mid_day_time, lunch_start_time, lunch_end_time, stage)
+        self.duration = end_time - start_time
+        self.isIdle = True
+
+    def is_idle(self):
+        return self.isIdle
+
+    def fill_task(self):
+        self.isIdle = False
+        self.last_task_finish_time = self.end_time
+        return self.end_time
+
 
 
 class WokrerCollection:
@@ -169,6 +166,13 @@ class WokrerCollection:
         self.end = format_time(end_time)
         self.day = day
         self.period = period
+
+    def sort_workers(self):
+        self.workers = sorted(self.workers)
+
+    def earliest_free_worker(self):
+        # sorted list by free time
+        return self.workers[0]
 
     def __str__(self):
         output = [f'stage {self.stage} with {len(self.workers)} workers start {self.start} end {self.end}']
@@ -274,6 +278,27 @@ class WokrerCollection:
                     next_worker = worker
         return next_worker
 
+class BatchCollection (WokrerCollection):
+    def __init__(self,  day, period, stage, nb_worker, start_time, end_time, mid_day_time, lunch_start_time, lunch_end_time):
+        WokrerCollection.__init__(self, day, period, stage, nb_worker, start_time, end_time, mid_day_time, lunch_start_time, lunch_end_time)
+        self.workers = [BatcherWorkerClass(i, day, period, start_time, end_time, mid_day_time, lunch_start_time, lunch_end_time, stage) for i
+                        in range(nb_worker)]
+
+    def free_count(self):
+        count = 0
+        for w in self.workers:
+            if w.last_task_finish_time == w.start_time:
+                count = count + 1
+        return count
+
+
+    def get_idle_batch_worker(self):
+        for w in self.workers:
+            if w.is_idle():
+                return w
+        return None
+
+
 
 class TaskClass:
 
@@ -313,9 +338,12 @@ class TaskClass:
         self.task_finished = True
         self.task_finish_time = time
 
-    def set_start_time(self, task_start_time=0):
+    def set_start_time(self, task_start_time = 0, duration = None):
         self.start_task_time = task_start_time
-        self.end_task_time = task_start_time + self.duration
+        if duration != None:
+            self.end_task_time = task_start_time + duration
+        else:
+            self.end_task_time = task_start_time + self.duration
         self.task_finished = True
 
         start_time = format_time(self.start_task_time)
@@ -358,11 +386,18 @@ class JobClass:
         self.taskcollection = []
         self.current_task_idx = 0
         self.job_done = False
-        self.embedding_count = 0
+        self.batch_count = 0
 
-    def move_to_next_task(self, task_start_time):
+    def reduce_batch_count(self):
+        self.batch_count = self.batch_count - 1
+        assert(self.batch_count >= 0)
 
-        next_task_ready_time = self.taskcollection[self.current_task_idx].set_start_time(task_start_time)
+    def move_to_next_task(self, task_start_time = None, duration = None):
+        assert(task_start_time != None)
+
+        next_task_ready_time = self.taskcollection[self.current_task_idx].set_start_time(task_start_time, duration)
+
+
         if self.current_task_idx < len(self.taskcollection) - 1:
 
             self.current_task_idx = self.current_task_idx + 1
@@ -373,12 +408,12 @@ class JobClass:
 
     def set_job(self, key, embedding, value):
         self.job_id = key
-        self.embedding_count = embedding
+        self.batch_count = embedding
         for v in value:
             self.taskcollection.append(TaskClass(v, key))
 
     def __str__(self):
-        output = [f'{self.job_id} embedding {self.embedding_count}']
+        output = [f'{self.job_id} embedding {self.batch_count}']
         for task in self.taskcollection:
             output.append(task.__str__())
         output.append(f'current {self.taskcollection[self.current_task_idx].__str__()}')
@@ -411,8 +446,7 @@ class JobCollection():
         self.jobs[job_key].move_to_next_task(task_start_time)
         return self.jobs[job_key]
 
-    def next_task_each_stage(self, ends_time):
-        pass
+
 
     def next_task_for_each_stage(self, ends_time):
 

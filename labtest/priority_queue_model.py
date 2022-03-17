@@ -132,7 +132,7 @@ def add_finished_stats(row, finished_case):
 
 def record_result(start_date=18):
     logstr = []
-    end_date = start_date + 4
+    end_date = start_date + 1
     result_df = pd.DataFrame(paras['result'],
                              columns=['case_key', 'case_name', 'priority', 'client', 'case_stage_rank', 'start', 'end',
                                       'duration', 'ready_time'])
@@ -514,7 +514,7 @@ def assign_model(current_staffing, day_index_local=1):
     current_day = 17 + day_index_local
 
     data_rolling_window_lower_bound = day_index_local - 1
-    data_rolling_window_upper_bound = day_index_local + 4
+    data_rolling_window_upper_bound = day_index_local + 3
 
     paras[workers_str] = {}  # key day, period, stage, value is a collection of workers for that shift
 
@@ -524,7 +524,7 @@ def assign_model(current_staffing, day_index_local=1):
     for day, data_windows in day_data_windows.items():
         a = datetime.datetime.now()
         #if day < data_rolling_window_lower_bound: continue
-        #if day > data_rolling_window_upper_bound: break
+        if day > data_rolling_window_upper_bound: break
         job_today = 0
         paras['night_used_embeddings'] = 0
         paras['lunch_used_embeddings'] = 0
