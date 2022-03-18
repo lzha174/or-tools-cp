@@ -79,7 +79,7 @@ def format_staff_time(value):
 shift_patterns = {}
 staffing = {}
 staff_interval = 4
-nb_days = 10
+nb_days = 12
 nb_shifts = 3
 nb_fake_users = 10
 nb_days_rostering = 28
@@ -88,7 +88,7 @@ fake_user_suffix = 'fake_user_'
 for step in range(0, nb_shifts):
     start = 8 + staff_interval * step
     end = start + staff_interval
-    if end >= 19: end = 17
+    if end >= 19: end = 18
     start_str = format_staff_time(start)
     end_str = format_staff_time(end)
 

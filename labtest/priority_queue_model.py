@@ -178,6 +178,14 @@ def record_result(start_date=18):
     #finished = finished[finished['client'] == 'Grossing'].sort_values(["start"], ascending=(True))
     # finished.to_csv('stats_out.csv', index=False)
     write_to_csv(finished, 'stats_out.csv')
+    two_hour_cases = finished[finished.priority == '2 Hours']
+    nine_hour_cases = finished[finished.priority == '9 Hours']
+    case_split = {2: two_hour_cases, 9: nine_hour_cases}
+    for c, cases in case_split.items():
+        ready_time_df = cases.groupby(by='case_key').ready_time.min()
+        max_end_time_df = cases.groupby(by='case_key').end.max()
+        total_duration_df = pd.DataFrame(max_end_time_df - ready_time_df, columns=['optimised_duration'])
+        print('priority', c, 'or average', total_duration_df['optimised_duration'].mean())
 
     temp = stats_df[stats_df.case_stage_rank == 1].sort_values(["start"], ascending=(True))
     case_key = temp['case_key'].tolist()
@@ -511,10 +519,10 @@ def assign_model(current_staffing, day_index_local=1):
     paras['staffing'] = current_staffing
     paras['result'] = []
     paras['utilisation'] = []
-    current_day = 17 + day_index_local
+    current_day = 18 + day_index_local
 
     data_rolling_window_lower_bound = day_index_local - 1
-    data_rolling_window_upper_bound = day_index_local + 3
+    data_rolling_window_upper_bound = day_index_local + 4
 
     paras[workers_str] = {}  # key day, period, stage, value is a collection of workers for that shift
 
@@ -524,7 +532,7 @@ def assign_model(current_staffing, day_index_local=1):
     for day, data_windows in day_data_windows.items():
         a = datetime.datetime.now()
         #if day < data_rolling_window_lower_bound: continue
-        if day > data_rolling_window_upper_bound: break
+        #if day > data_rolling_window_upper_bound: break
         job_today = 0
         paras['night_used_embeddings'] = 0
         paras['lunch_used_embeddings'] = 0
@@ -565,6 +573,7 @@ def assign_model(current_staffing, day_index_local=1):
     #get_gantt()
     average_time, reach_target = record_result(current_day)
     print('last queue', len(queue_from_last_shift))
+    allJobs.check_job()
 
     #return average_time, reach_target
 

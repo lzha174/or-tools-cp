@@ -258,7 +258,6 @@ class TaskClass:
         self.duration = task.duration
         self.end_task_time = 0
         self.task_finished = False
-        self.task_finish_time = 0
         self.ready_time = task.ready_time
         self.client_idx = task.client_idx
         self.priority = task.priority_idx
@@ -286,7 +285,7 @@ class TaskClass:
 
     def set_finish(self, time):
         self.task_finished = True
-        self.task_finish_time = time
+
 
     def set_start_time(self, task_start_time=0):
         self.start_task_time = task_start_time
@@ -334,6 +333,11 @@ class JobClass:
         self.current_task_idx = 0
         self.job_done = False
 
+    def check_task(self):
+        for i in range(len(self.taskcollection) - 1):
+            if self.taskcollection[i].task_finished and self.taskcollection[i + 1].task_finished:
+                assert(self.taskcollection[i].end_task_time <= self.taskcollection[i + 1].start_task_time)
+
     def move_to_next_task(self, task_start_time):
 
         next_task_ready_time = self.taskcollection[self.current_task_idx].set_start_time(task_start_time)
@@ -379,6 +383,11 @@ class JobCollection():
     def mark_job_task_finish(self, job_key, task_start_time):
         self.jobs[job_key].move_to_next_task(task_start_time)
         return self.jobs[job_key]
+
+    def check_job(self):
+        for key, job in self.jobs.items():
+            job.check_task()
+
 
     def next_task_for_each_stage(self, ends_time):
 

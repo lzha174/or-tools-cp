@@ -31,7 +31,6 @@ class WorkerClass:
         self.lunch_interval = pd.Interval(self.lunch_start_time, self.lunch_end_time, closed = 'left')
         self.total_breaks = 0
         self.task_gantt = []
-        self.idle_intervals = []
         self.total_tasks_assgined = 0
         self.interval_modify = None
         self.stage =  stage
@@ -44,50 +43,6 @@ class WorkerClass:
             self.breaks.append(pd.Interval(left = lunch_start_time, right = lunch_end_time, closed = 'left'))
 
 
-
-    def find_insertion(self, task_ready_time, duration):
-        # return task start time and if this task is appended to the end
-        # go through the array of idle itnervals, find the first idle itnerval that can allocate this task
-        index_to_modify = None
-        left_interval = None
-        right_interval = None
-        task_start_time = None
-        for idx, interval in enumerate(self.idle_intervals):
-            left = interval.left
-            right = interval.right
-            #print(format_time(left), format_time(right))
-            assert(self.lunch_interval.overlaps(interval) == False)
-            # if right is below task ready time, no way to allocate this task to this interval
-            # so the first interval must be that task ready time in the interval or left is above task ready time
-            if right < task_ready_time: continue
-            if left >= task_ready_time or task_ready_time in interval:
-                task_start_time = custom_max(left, task_ready_time)
-                task_end_time = task_start_time + duration
-                if task_end_time in interval:
-                    # this is a valid intrval
-                    # once this task is assgined, two more idle intervals can be created
-                    if task_start_time > left:
-                        left_interval = pd.Interval(left = left, right = task_start_time, closed = 'left')
-                    if task_end_time < right:
-                        right_interval = pd.Interval(left = task_end_time, right = right, closed = 'left')
-                    index_to_modify = idx
-                    break
-        if index_to_modify is not None:
-            self.interval_modify = modify_worker_interval_type(index = index_to_modify, left_interval = left_interval, right_interval = right_interval)
-            #self.update_gantt(duration, task_start_time)
-            return task_start_time, False
-        else:
-            self.interval_modify = None
-            # no place to insert between idle intervals
-            # return the position after next avalible time
-            task_start_time = custom_max(self.last_task_finish_time, task_ready_time)
-            if task_start_time + duration > self.end_time:
-                return None, False
-            #print(format_time(self.last_task_finish_time), format_time(task_ready_time))
-            return custom_max(self.last_task_finish_time, task_ready_time), True
-
-
-
     def find_start_time_with_breaks(self, task_start_time, duration):
         task_inteval = pd.Interval(left = task_start_time, right = task_start_time + duration)
         for w_break in self.breaks:
@@ -97,7 +52,7 @@ class WorkerClass:
                     return  None
                 task_inteval = pd.Interval(left=w_break.right, right= w_break.right + duration)
             else:
-                return task_inteval.left
+                break
         # if we cant find any time to start this task, this worker cant do any work any more in this shift?
         if task_inteval.right < self.end_time:
             return task_inteval.left
@@ -115,10 +70,18 @@ class WorkerClass:
         return True, adjusted_start_time, adjusted_end_time
 
     def update_free_time(self, start_time, end_time, task):
-
+        assert (end_time < self.end_time)
         self.last_task_finish_time = end_time
+
         self.update_gantt(start_time, task)
 
+    def check_overlap(self):
+        nb = len(self.task_gantt)
+        for i in range(nb - 1):
+            j = i + 1
+            task_i_end = self.task_gantt[i][4] + self.task_gantt[i][5]
+            task_j_start = self.task_gantt[j][4]
+            assert(task_i_end <= task_j_start)
 
 
     def update_gantt(self, task_start_time, task):
@@ -174,6 +137,10 @@ class WokrerCollection:
         # sorted list by free time
         return self.workers[0]
 
+    def check_overlap(self):
+        for w in self.workers:
+            w.check_overlap()
+
     def __str__(self):
         output = [f'stage {self.stage} with {len(self.workers)} workers start {self.start} end {self.end}']
         for w in self.workers:
@@ -204,79 +171,6 @@ class WokrerCollection:
         average = average / len(self.workers)
         return average
 
-    def show_idle_intervals(self):
-        for worker in self.workers:
-            for interval in worker.idle_intervals:
-                left = format_time(interval.left)
-                right = format_time(interval.right)
-                print(left, right)
-
-    def find_earliest_free(self):
-        freeTimes = []
-        for idx, worker in enumerate(self.workers):
-            freeTimes.append(worker.last_task_finish_time)
-        # get the minimum value in the list
-        min_value = min(freeTimes)
-
-        # return the index of minimum value
-        min_index = freeTimes.index(min_value)
-        # how to handle end of shift?
-        return self.workers[min_index]
-
-    def insert_into_idle(self, ready_time, duration):
-        # find the worker with earliest insertion
-        # it could be the end of the worker current task list if we cant insert into idle intervals between already allocated tasks
-        min_start_time = float('inf')
-        best_worker = None
-        isAppend = True
-        for worker in self.workers:
-            #print(worker)
-            task_start_time, append = worker.find_insertion(ready_time, duration)
-            if task_start_time is not None:
-                if task_start_time < min_start_time:
-                    min_start_time = task_start_time
-                    best_worker = worker
-                    isAppend = append
-
-        if best_worker is not None:
-            if isAppend:
-                best_worker.update_last_task_finish_time(task_start_time=min_start_time, duration = duration)
-            else:
-                best_worker.modify_idle_interval()
-            best_worker.total_busy_time = best_worker.total_busy_time + duration
-            best_worker.update_gantt(duration, min_start_time)
-        return best_worker, min_start_time
-
-    def next_avaliable_worker(self, ready_time, duration):
-        next_avalible_time = None
-        next_worker = None
-        for worker in self.workers:
-            # if worker.get_avaliable_time() < ready_time: continue
-            # if task ready time is during lunch time, avalible time is 12pm, task start time is task ready time
-            # it overlap with lunch time, so make the avalible time for that worker to be after lunch time for this task
-            # if task ready time is before lunch, avalible time is during lunch time, task start time is during lunch time, again overlap, make avalible time after lunch
-            # notebook change to python_max
-            task_start_time = custom_max(ready_time, worker.last_task_finish_time)
-            task_finished_time = task_start_time + duration
-            # if this work overlap with lunch time, change the avaliable time for the worker to b after lunch time
-            worker.isLunchTime(task_start_time, task_finished_time)
-            # reset start time
-            # task_start_time = custom_max(ready_time, worker.next_avalaible_time)
-            # task_finished_time = task_start_time + duration
-
-            if task_finished_time > worker.end_time: continue
-            # if this job overlap lunch time, pretend this worker is avalible after lunch
-
-            # worker.isLunchTime(task_start_time, task_finished_time)
-
-            if next_avalible_time is None:
-                next_avalible_time = worker.last_task_finish_time
-                next_worker = worker
-            else:
-                if worker.last_task_finish_time < next_avalible_time:
-                    next_avalible_time = worker.last_task_finish_time
-                    next_worker = worker
-        return next_worker
 
 class BatchCollection (WokrerCollection):
     def __init__(self,  day, period, stage, nb_worker, start_time, end_time, mid_day_time, lunch_start_time, lunch_end_time):
@@ -292,9 +186,9 @@ class BatchCollection (WokrerCollection):
         return count
 
 
-    def get_idle_batch_worker(self):
+    def get_idle_batch_worker(self, task):
         for w in self.workers:
-            if w.is_idle():
+            if w.is_idle() and task.ready_time < w.start_time:
                 return w
         return None
 
@@ -308,7 +202,6 @@ class TaskClass:
         self.duration = task.duration
         self.end_task_time = 0
         self.task_finished = False
-        self.task_finish_time = 0
         self.ready_time = task.ready_time
         self.client_idx = task.client_idx
         self.priority = task.priority_idx
@@ -316,17 +209,12 @@ class TaskClass:
         self.job_id = job_id
         self.task_rank = 0
 
-
-
     def __str__(self):
         stage = self.task.client_idx
         client = paras[idx_to_name_client_str][stage]
         return (
             f'job {self.job_id} task {client} start {format_time(self.start_task_time)} end {format_time(self.end_task_time)} priority ={self.priority} duration {self.duration} ready {format_time(self.ready_time)}')
 
-    def __lt__(self, other):
-        # for the same stage, queue high rank job to schedule first, rank 0 is highest
-        return self.ready_time < other.ready_time
 
     def get_task(self):
         return self.task
@@ -336,7 +224,6 @@ class TaskClass:
 
     def set_finish(self, time):
         self.task_finished = True
-        self.task_finish_time = time
 
     def set_start_time(self, task_start_time = 0, duration = None):
         self.start_task_time = task_start_time
@@ -378,8 +265,6 @@ class TaskClass:
 
 
 class JobClass:
-    counter = 0
-    ranks = [0, 1]
 
     def __init__(self):
 
@@ -387,6 +272,11 @@ class JobClass:
         self.current_task_idx = 0
         self.job_done = False
         self.batch_count = 0
+
+    def check_task(self):
+        for i in range(len(self.taskcollection) - 1):
+            if self.taskcollection[i].task_finished and self.taskcollection[i + 1].task_finished:
+                assert(self.taskcollection[i].end_task_time <= self.taskcollection[i + 1].start_task_time)
 
     def reduce_batch_count(self):
         self.batch_count = self.batch_count - 1
@@ -442,57 +332,7 @@ class JobCollection():
     def show_job(self, job_key):
         print(self.jobs[job_key])
 
-    def mark_job_task_finish(self, job_key, task_start_time):
-        self.jobs[job_key].move_to_next_task(task_start_time)
-        return self.jobs[job_key]
+    def check_job(self):
+        for key, job in self.jobs.items():
+            job.check_task()
 
-
-
-    def next_task_for_each_stage(self, ends_time):
-
-        # look the next task for each job, assign a task with smallest arrival time for that stage to the next avlaible worker
-        task_to_do = {}
-
-        for job_key, job in self.jobs.items():
-            next_task = job.current_task()
-            if next_task is None: continue
-            task_stage = next_task.get_client_idx()
-            if task_stage != paras[batch_stage_idx_str]:
-                if next_task.ready_time + next_task.duration > ends_time: continue
-                if task_stage not in task_to_do:
-                    task_to_do[task_stage] = next_task_type(job_key=job_key, task=next_task)
-                else:
-                    if task_to_do[task_stage].task.first_task_ready_time > next_task.first_task_ready_time:
-                        task_to_do[task_stage] = next_task_type(job_key=job_key, task=next_task)
-            else:
-                if task_stage not in task_to_do:
-                    task_to_do[task_stage] = []
-                task_to_do[task_stage].append(next_task_type(job_key=job_key, task=next_task))
-        # print('task to do are ')
-        # print(task_to_do)
-        return task_to_do
-
-    def next_task_stage(self, stage):
-        task_to_do = None
-        # find the job which has a task to do at stage whose min ready time is smallest
-        # first find all jobs whose next ask is at this stage
-        if stage != paras[batch_stage_idx_str] and stage != nigh_stage:
-            for job_key, job in self.jobs.items():
-                next_task = job.current_task()
-                if next_task.client_idx == stage:
-                    # print(next_task)
-                    if task_to_do is not None:
-                        if task_to_do.first_task_ready_time > next_task.first_task_ready_time:
-                            task_to_do = next_task
-                    else:
-                        task_to_do = next_task
-            # print(f'next task at {stage}')
-            # print(task_to_do)
-        else:
-            # we are trying to find batched
-            task_to_do = []
-            for job_key, job in self.jobs.items():
-                next_task = job.current_task()
-                if next_task.client_idx == stage:
-                    task_to_do.append(next_task)
-            # print('to do embedding', len(task_to_do))
