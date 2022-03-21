@@ -11,3 +11,7 @@ CPextension/__pycache__/statefunction.cpython-39.pyc
 /labtest/worker_available.csv
 /labtest/worker_gantt.csv
 /labtest/worker_profile.csv
+/labtest/simresult.csv
+/labtest/out.csv
+/labtest/stats_out.csv
+/labtest/*.csv
