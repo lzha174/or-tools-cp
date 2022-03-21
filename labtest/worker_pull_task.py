@@ -449,18 +449,19 @@ def pull_job(current_job_pool):
                     if task_to_do is None:
                         break
                     job_id = task_to_do.job_id
-
+                    if job_id == 1147:
+                        print('g')
                     # now check if this worker can do this task
                     eligible, start_time, end_time = w.free_to_next_task(task_to_do)
 
                     if eligible:
                         w.update_free_time(start_time = start_time, end_time=end_time, task = task_to_do)
-                        logging.debug(f'{eligible}, {format_time(start_time)}')
-                        logging.debug(w)
+                        #print(eligible, format_time(start_time))
+                        #print(w)
                         # update job next task ready time
 
                         allJobs[job_id].move_to_next_task(start_time)
-                        logging.debug(allJobs[job_id])
+                        #print(allJobs[job_id])
 
                         if allJobs[job_id].job_done:
                             current_job_pool.remove(allJobs[job_id])
